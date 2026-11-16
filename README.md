@@ -6,6 +6,12 @@ The agent speaks first, brings a plan, and the founder says yes.
 Built from the Synveon full-stack template (FastAPI + React 19 SPA), with the
 template's worked examples stripped out and replaced by one thing: the conversation.
 
+[![CI](https://github.com/ymirau/pace-v0/actions/workflows/ci.yml/badge.svg)](https://github.com/ymirau/pace-v0/actions/workflows/ci.yml)
+
+**Live:** <https://pace-v0.vercel.app> — private review link, gated by a shared access
+code. Ask Inji for it. Backed by a Neon Postgres database, so work added through the
+chat survives a redeploy; see [Deploying](#deploying).
+
 > **This is spike work, not a product.** It exists to answer one question — is a pushy
 > agent **magic** or **annoying**? The thesis, scenario script and close-out live in the
 > terminal spike repo, [`pace-v0-spike`](https://github.com/ymirau/pace-v0-spike)

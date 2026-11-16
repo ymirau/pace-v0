@@ -1,0 +1,143 @@
+# The gate from CLAUDE.md ("Before you call a change done"), enforced on every push
+# and pull request instead of relying on everyone remembering to run it:
+#
+#   cd backend  && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
+#   cd frontend && npm run lint && npm run build
+#
+# plus the frontend unit tests, which include the WCAG contrast proofs that fail when a
+# new text colour is painted without one (frontend/src/contrast.test.ts).
+#
+# This replaces .gitlab-ci.yml, deleted in the same commit: the repo lives on GitHub, so
+# that pipeline could never run, and it had drifted — it applied 002_items.sql,
+# 003_support_requests.sql and 004_user_roles.sql, none of which survived the template
+# cleanup. A CI config that cannot run is worse than none, because it reads like cover.
+#
+# Jobs are path-filtered so a frontend-only change doesn't wait on Postgres.
+
+name: CI
+
+on:
+  push:
+    branches: [main, uat, develop, "feature/**", "fix/**", "chore/**"]
+  pull_request:
+
+# A new push to the same branch cancels the run already in flight; nobody needs the
+# result of a commit that has been superseded.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'api/**'
+              - 'requirements.txt'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/ci.yml'
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        # Throwaway, destroyed with the job. These credentials are not secrets and
+        # deliberately are not stored as repository secrets — see the same reasoning in
+        # the GitLab config this replaced.
+        image: postgres:16
+        env:
+          POSTGRES_DB: pace_test
+          POSTGRES_USER: pace
+          POSTGRES_PASSWORD: pace
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_URL: postgresql+asyncpg://pace:pace@localhost:5432/pace_test
+      AUTH_DISABLED: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Apply the schema
+        # Every sql/postgres/NNN_*.sql in numeric order. Globbed rather than listed, so
+        # adding an entity cannot leave CI behind — which is exactly how the old config
+        # ended up applying three files that no longer existed. 999_grants.sql is
+        # skipped on purpose: here the test user owns the database, so it already has
+        # every privilege the grants would hand to a separate app role.
+        run: |
+          for f in $(ls sql/postgres/[0-9][0-9][0-9]_*.sql | sort); do
+            echo "applying $f"
+            PGPASSWORD=pace psql -h localhost -U pace -d pace_test -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Readiness check
+        run: uv run python -m scripts.postgres.setup_db
+
+      - name: Tests
+        run: uv run pytest -q
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        # Includes the contrast proofs: a text colour with no WCAG proof fails here.
+        run: npm test
+
+      - name: Build
+        # `npm run build` is `tsc -b && vite build`, so this is the type check too.
+        # No VITE_AUTH_BYPASS: CI must build the bundle that keeps real auth on.
+        run: npm run build

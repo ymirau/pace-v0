@@ -163,7 +163,7 @@ picker (Admin → Users); it's never used for lookups.
   and document them in `.env.example` + `README.md`.
 - **Tests run in a rolled-back transaction** (`tests/fixtures/postgres.py`) against
   `POSTGRES_URL`, so committed writes don't persist. CI points that URL at a
-  throwaway Postgres service (see `.gitlab-ci.yml`); locally use a disposable DB.
+  throwaway Postgres service (see `.github/workflows/ci.yml`); locally use a disposable DB.
 
 ## Commands
 

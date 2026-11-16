@@ -11,8 +11,8 @@
  *
  * The second is a **build-time** constant, baked in by Vite, not a runtime switch: a
  * deployed bundle either has it or it doesn't, and nothing an attacker sends can turn
- * it on. The sbx/uat/prod bundles are built by `.gitlab-ci.yml`, which never sets it,
- * so the invariant in CLAUDE.md §4 still holds — those environments keep real auth.
+ * it on. `.github/workflows/ci.yml` builds without it deliberately, so CI always checks
+ * the bundle that keeps real auth, and the invariant in CLAUDE.md §4 still holds.
  *
  * On the review link it is not the only thing standing in front of the app: every
  * `/api` route also requires the shared `PACE_ACCESS_CODE` (see `core/gate.py`). That

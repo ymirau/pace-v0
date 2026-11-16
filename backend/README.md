@@ -158,7 +158,7 @@ uv run ruff check . && uv run ruff format --check .
 
 Tests run against `POSTGRES_URL` inside a transaction that rolls back, so writes
 never persist. In CI they run against a throwaway Postgres service that lives only
-for the job (see `.gitlab-ci.yml`); locally, point `POSTGRES_URL` at a disposable
+for the job (see `.github/workflows/ci.yml`); locally, point `POSTGRES_URL` at a disposable
 dev database.
 
 ## API

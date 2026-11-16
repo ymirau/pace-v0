@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # --- Postgres (shared Synveon instance) ---
     # pytest runs against this same URL and rolls back every change; CI points it
-    # at a throwaway Postgres service (see .gitlab-ci.yml).
+    # at a throwaway Postgres service (see .github/workflows/ci.yml).
     postgres_url: str = Field(..., alias="POSTGRES_URL")
 
     # --- SQL Server (optional read/write source) ---

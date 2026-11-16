@@ -10,7 +10,7 @@ from app.core.config import get_settings
 async def engine() -> AsyncIterator[AsyncEngine]:
     # Tests run against POSTGRES_URL and roll back every change (see db_session),
     # so they never persist. In CI that URL points at a throwaway Postgres service
-    # that exists only for the job (see .gitlab-ci.yml); locally, point it at a
+    # that exists only for the job (see .github/workflows/ci.yml); locally, point it at a
     # disposable dev database.
     eng = create_async_engine(get_settings().postgres_url, pool_pre_ping=True, future=True)
     try:

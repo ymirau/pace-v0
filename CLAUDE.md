@@ -12,7 +12,7 @@ human-facing overview; this file is the operational guide for extending the code
 | `frontend/` | React 19 SPA (Vite, Tailwind, React Router, TanStack Query, MSAL) | [frontend/CLAUDE.md](frontend/CLAUDE.md) |
 | `_deploy/` | Per-env config files + deployment guide | [_deploy/README.md](_deploy/README.md) |
 | `_workitems/` | Product workflow — backlog, planning, PRDs, the Ralph runner | [_workitems/README.md](_workitems/README.md) |
-| `.gitlab-ci.yml` | lint → test → build pipeline (path-filtered per component) | |
+| `.github/workflows/ci.yml` | lint → test → build on every push and PR (path-filtered per component) | |
 
 ## Cross-cutting invariants — do not break these
 

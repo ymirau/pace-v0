@@ -7,9 +7,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # --- Pace chat agent ---
+    # The key the chat engine calls Claude with. Local-only for the spike; never
+    # committed (backend/.env is gitignored).
+    anthropic_api_key: str = Field("", alias="ANTHROPIC_API_KEY")
+    pace_model: str = Field("claude-sonnet-5-5", alias="PACE_MODEL")
+    pace_seed: str = Field("startup", alias="PACE_SEED")
+    # A shared code the SPA sends as X-Pace-Access-Code. Empty = gate open (local
+    # dev only). Set it in every deployed env: the chat spends real money.
+    pace_access_code: str = Field("", alias="PACE_ACCESS_CODE")
+
     # --- Postgres (shared Synveon instance) ---
     # pytest runs against this same URL and rolls back every change; CI points it
-    # at a throwaway Postgres service (see .gitlab-ci.yml).
+    # at a throwaway Postgres service (see .github/workflows/ci.yml).
     postgres_url: str = Field(..., alias="POSTGRES_URL")
 
     # --- SQL Server (optional read/write source) ---

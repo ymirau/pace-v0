@@ -53,5 +53,5 @@ def test_every_api_route_depends_on_get_current_user() -> None:
 async def test_a_request_without_a_token_is_401(unauthenticated_client: AsyncClient) -> None:
     # The walk proves the dependency is attached; this proves the dependency
     # actually refuses — a representative endpoint, with auth forced on.
-    response = await unauthenticated_client.get("/api/items")
+    response = await unauthenticated_client.get("/api/chat/state")
     assert response.status_code == 401

@@ -1,0 +1,40 @@
+# What NOT to upload when deploying from this directory.
+#
+# `vercel deploy` sends the working directory, not a git checkout, so .gitignore is not
+# reliably in force. Without this file the upload would include backend/.env — the
+# Anthropic key and the Neon password — and once bytes have left the machine you cannot
+# take them back. Everything the deployed app needs comes from Vercel's own environment
+# variables instead.
+
+# Secrets and local-only config.
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Real business data: seed_mine.json holds real people's names, state.json is a local
+# cache of whatever was last typed into the chat. The deployed app seeds itself from
+# Postgres (pace.pace_state), so neither is needed and neither should travel.
+backend/app/pace/data/seed_mine.json
+backend/app/pace/data/state.json
+backend/app/pace/transcripts/
+
+# Build outputs and dependencies — Vercel installs and builds from source.
+node_modules
+frontend/dist
+frontend/node_modules
+backend/.venv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+
+# Repo furniture with no role at runtime.
+_deploy/
+_workitems/
+.githooks/
+.vscode/
+.gitlab-ci.yml
+
+# Local `vercel build` byproducts — never part of an upload.
+.vercel_python_packages/
+/pyproject.toml
+/uv.lock

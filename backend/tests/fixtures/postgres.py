@@ -4,14 +4,13 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from app.core.config import get_settings
-from app.sources.postgres.models.item import Item
 
 
 @pytest_asyncio.fixture
 async def engine() -> AsyncIterator[AsyncEngine]:
     # Tests run against POSTGRES_URL and roll back every change (see db_session),
     # so they never persist. In CI that URL points at a throwaway Postgres service
-    # that exists only for the job (see .gitlab-ci.yml); locally, point it at a
+    # that exists only for the job (see .github/workflows/ci.yml); locally, point it at a
     # disposable dev database.
     eng = create_async_engine(get_settings().postgres_url, pool_pre_ping=True, future=True)
     try:
@@ -35,12 +34,3 @@ async def db_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
             await session.close()
             if outer_trans.is_active:
                 await outer_trans.rollback()
-
-
-@pytest_asyncio.fixture
-async def seed_item(db_session: AsyncSession) -> int:
-    item = Item(name="Seeded item", description="Pre-existing row for list tests.")
-    db_session.add(item)
-    await db_session.commit()
-    await db_session.refresh(item)
-    return item.id

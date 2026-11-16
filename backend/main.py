@@ -4,9 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import health, items, me, reports, sources, support, user_roles
+from app.routers import chat, health, log, me
 from app.sources.postgres.session import dispose_engine, init_engine
-from app.sources.sqlserver.session import dispose_engine as dispose_sqlserver_engine
 
 
 @asynccontextmanager
@@ -15,9 +14,6 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
-        # Optional sources connect lazily on first use, so disposing one is a no-op
-        # when nothing queried it (or it was never configured).
-        await dispose_sqlserver_engine()
         await dispose_engine()
 
 
@@ -39,11 +35,7 @@ if _origins:
 # Behind the platform's Caddy, requests arrive as `<base>/api/*` and Caddy strips
 # only the env prefix, so the backend must answer under `/api/*`. `/health` stays
 # at the root for direct liveness checks against the service port.
-# Add each new entity router here with prefix="/api".
 app.include_router(health.router)
-app.include_router(items.router, prefix="/api")
-app.include_router(reports.router, prefix="/api")
-app.include_router(sources.router, prefix="/api")
-app.include_router(support.router, prefix="/api")
 app.include_router(me.router, prefix="/api")
-app.include_router(user_roles.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
+app.include_router(log.router, prefix="/api")

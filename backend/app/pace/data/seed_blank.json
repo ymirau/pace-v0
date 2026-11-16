@@ -1,0 +1,23 @@
+{
+  "time_mode": "real",
+  "_how_to_use": [
+    "An empty business. Load it and the agent introduces itself and sets things up",
+    "by asking \u2014 nothing here is pre-filled.",
+    "",
+    "To skip the conversation and type it in yourself instead:",
+    "    cp seed_blank.json seed_mine.json",
+    "then fill in founder, people, projects and tasks, where due_in_days and",
+    "last_touched_days_ago are DAYS FROM TODAY (negative due_in_days = overdue).",
+    "seed_mine.json is gitignored: it holds a real business and real people's names."
+  ],
+  "goal_in_days": null,
+  "founder": {
+    "name": "",
+    "business": "",
+    "goal": "",
+    "weekly_hours": 0
+  },
+  "people": [],
+  "projects": [],
+  "tasks": []
+}

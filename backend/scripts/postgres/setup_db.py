@@ -112,9 +112,7 @@ async def main() -> None:
         print(DBA_GUIDANCE)
         raise SystemExit(1)
 
-    print(
-        f"\nDatabase ready: {len(tables)} table(s) present and accessible. Run scripts.postgres.seed next."
-    )
+    print(f"\nDatabase ready: {len(tables)} table(s) present and accessible.")
 
 
 if __name__ == "__main__":

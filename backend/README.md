@@ -71,7 +71,6 @@ a DBA/owner step). Then, as the app role:
 
 ```bash
 uv run python -m scripts.postgres.setup_db   # verify the DB is ready (does NOT create anything)
-uv run python -m scripts.postgres.seed       # seed example rows (idempotent; delete seed.py if the app has nothing to seed)
 uv run uvicorn main:app --reload --port 8000
 ```
 
@@ -123,7 +122,6 @@ Once that's done, verify from the app side and seed (as the app role):
 
 ```bash
 uv run python -m scripts.postgres.setup_db   # readiness check: schema + tables exist, app role has SELECT + CRUD
-uv run python -m scripts.postgres.seed       # seed example rows
 ```
 
 `setup_db.py` creates nothing — it connects as `POSTGRES_URL` and fails with
@@ -158,7 +156,7 @@ uv run ruff check . && uv run ruff format --check .
 
 Tests run against `POSTGRES_URL` inside a transaction that rolls back, so writes
 never persist. In CI they run against a throwaway Postgres service that lives only
-for the job (see `.gitlab-ci.yml`); locally, point `POSTGRES_URL` at a disposable
+for the job (see `.github/workflows/ci.yml`); locally, point `POSTGRES_URL` at a disposable
 dev database.
 
 ## API

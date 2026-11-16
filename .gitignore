@@ -84,3 +84,17 @@ _workitems/ralph/archive/
 _workitems/ralph/.last-branch
 _workitems/ralph/.last-story
 _workitems/ralph/.story-attempts
+
+# Pace chat engine: live state and session transcripts
+backend/app/pace/data/state.json
+backend/app/pace/data/seed_mine.json
+backend/app/pace/transcripts/
+.vercel
+.env*
+
+# Byproducts of `vercel build` run at the repo root: a pyproject.toml and lock
+# synthesised from requirements.txt, and the wheels it installs (~55 MB). All
+# regenerated on demand; none of them describe this repo.
+/.vercel_python_packages/
+/pyproject.toml
+/uv.lock

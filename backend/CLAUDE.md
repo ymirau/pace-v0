@@ -30,7 +30,6 @@ app/routers/sources.py           /sources/status: which optional sources are con
 sql/postgres/NNN_*.sql                    hand-numbered DDL (001_schema, 002_items, …) + 999_grants.sql — applied by a DBA/owner
 sql/sqlserver/*.sql                       queries for the SQL Server reports (loaded by services/reports.py)
 scripts/postgres/setup_db.py              app-role readiness check (verifies the DBA's DDL + grants; creates nothing)
-scripts/postgres/seed.py                  idempotent seed script
 tests/                           pytest; conftest overrides session + auth
 ```
 
@@ -163,7 +162,7 @@ picker (Admin → Users); it's never used for lookups.
   and document them in `.env.example` + `README.md`.
 - **Tests run in a rolled-back transaction** (`tests/fixtures/postgres.py`) against
   `POSTGRES_URL`, so committed writes don't persist. CI points that URL at a
-  throwaway Postgres service (see `.gitlab-ci.yml`); locally use a disposable DB.
+  throwaway Postgres service (see `.github/workflows/ci.yml`); locally use a disposable DB.
 
 ## Commands
 
@@ -171,7 +170,6 @@ picker (Admin → Users); it's never used for lookups.
 uv sync                                              # install deps
 uv run uvicorn main:app --reload --port 8000         # run (docs at /docs)
 uv run python -m scripts.postgres.setup_db                    # readiness check (DBA applies sql/postgres/ DDL + grants first; creates nothing)
-uv run python -m scripts.postgres.seed                        # seed
 uv run ruff check . && uv run ruff format --check .   # lint + format check
 uv run pytest -q                                     # tests (needs a reachable Postgres)
 ```

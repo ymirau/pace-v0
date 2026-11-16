@@ -56,5 +56,6 @@
       "source.organizeImports.ruff": "explicit"
     }
   },
-  "ruff.importStrategy": "fromEnvironment"
+  "ruff.importStrategy": "fromEnvironment",
+  "python.terminal.useEnvFile": true
 }

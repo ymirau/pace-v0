@@ -7,6 +7,12 @@ class MessageSend(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 
+class StreamSend(BaseModel):
+    """A streamed turn. `text` omitted means the proactive opening check-in."""
+
+    text: str | None = Field(None, min_length=1, max_length=4000)
+
+
 class ToolCall(BaseModel):
     name: str
     input: dict

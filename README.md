@@ -15,9 +15,14 @@ template's worked examples stripped out and replaced by one thing: the conversat
 
 One screen, `/`:
 
-- **The conversation.** On load the SPA calls `POST /api/chat/open` and the agent
+- **The conversation.** On load the SPA streams `POST /api/chat/stream` and the agent
   produces a check-in **before you type anything**. That unprompted turn is the
   product's whole proposition, so it is the first thing the UI does.
+- **The turn, as it happens.** A turn is two API calls and about seven seconds of the
+  model generating, and nothing makes that shorter — so the wait says what it is doing
+  ("Pace is drafting a plan…") and the reply appears as it is written. Reopening the app
+  is instant: a conversation already under way replays its last reply instead of paying
+  for another one.
 - **A tool trace.** Small grey chips above each agent message name the tools it called
   (`get_overview`, `check_timeline`, `propose_plan`…); hover one for its arguments.
   Watching it work is half the signal.
@@ -117,7 +122,7 @@ npm ci && npm run dev
 ```
 
 Open http://localhost:5173 and the agent opens the conversation. Without a key, the two
-routes that call the model (`/chat/open`, `/chat/message`) return **503** naming the
+routes that call the model (`/chat/stream`, `/chat/open`, `/chat/message`) return **503** naming the
 missing variable; `/chat/state`, `/api/me`, `/health` and the UI shell all still work.
 
 The same engine runs as a terminal chat in the spike repo, which also has the scenario
@@ -127,7 +132,8 @@ script, the ratings (`/rate`) and the simulated clock (`/advance`) that this UI 
 
 | Route | What |
 |---|---|
-| `POST /api/chat/open` | The proactive check-in. Catches a real-time seed's clock up first. |
+| `POST /api/chat/stream` | A turn as server-sent events: `tool`, `text`, `done`. `{"text": null}` is the check-in. What the UI uses. |
+| `POST /api/chat/open` | The proactive check-in, waited out in one response. Catches a real-time seed's clock up first. |
 | `POST /api/chat/message` | Send a message, get the reply plus the tools it called. |
 | `GET /api/chat/state` | Projects, tasks, people, proposals and the derived counts. |
 | `POST /api/chat/reset` | Reload a seed (`example` or `blank`) and start a new conversation. |
@@ -182,14 +188,16 @@ Don't carry the pattern into anything real.
 
 ## Known rough edges
 
-- **The conversation lives in process memory**, keyed per backend process. Any backend
-  edit triggers `--reload`, which starts a fresh conversation. Transcripts on disk
-  survive.
+- **An opening check-in costs about 7 seconds**, and that is the model generating, not
+  a slow backend: prompt-caching the 3.9k-token tools-and-prompt prefix and cutting a
+  round trip were both measured and both landed inside the noise. Dropping the
+  `propose_plan` step would take it to ~4s with the first words at ~1s — faster, but it
+  gives up the approve-with-one-yes turn the product is built on.
 - **The engine is vendored, not shared.** `backend/app/pace/` is a *copy* of the spike's
   package. One behaviour today, two files to fix tomorrow.
 - **Single user, not concurrent-safe.** The JSON store has no locking.
-- **No `/rate`, `/advance` or `/scenario` here.** Ratings and the simulated clock are
-  the experiment harness and live in the terminal spike.
+- **No `/advance` or `/scenario` here.** The simulated clock is the experiment harness
+  and lives in the terminal spike. Rating a turn works in both.
 - **Last write wins on the state document.** No locking, no optimistic concurrency. Two
   browser tabs would clobber each other.
 - **A UI at all is a departure from the spike's spec**, which says terminal-only until

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiFetch } from "./client";
+import { apiFetch, apiStream } from "./client";
 
 /** Mirrors backend/app/schemas/chat.py. */
 export interface ToolCall {
@@ -87,23 +87,73 @@ export function usePaceState() {
   return useQuery({ queryKey: ["pace", "state"], queryFn: () => apiFetch<PaceState>("/chat/state") });
 }
 
-/** The proactive check-in. Called once on load: the agent speaks first. */
-export function useOpenSession() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => apiFetch<Reply>("/chat/open", { method: "POST" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["pace", "state"] }),
-  });
+/** What a turn reports while it is still running. */
+export interface TurnEvents {
+  /** The agent reached for something — one event per tool call, as it happens. */
+  onTool?: (tool: ToolCall) => void;
+  /** A piece of the reply. Short replies arrive as one chunk; long ones trickle. */
+  onText?: (delta: string) => void;
 }
 
-export function useSendMessage() {
+/**
+ * One turn, read as it happens.
+ *
+ * `text` is the founder's message, or null for the proactive opening check-in. A turn
+ * is seconds of the model generating — two API calls and about 7s for the opening — so
+ * the UI shows what it is doing rather than a spinner. Resolves with the finished
+ * {@link Reply}, which is what gets rated.
+ */
+async function streamTurn(text: string | null, events: TurnEvents): Promise<Reply> {
+  const response = await apiStream("/chat/stream", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finished: Reply | null = null;
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buffer += decoder.decode(value, { stream: true });
+    // SSE frames are separated by a blank line; a frame may straddle two chunks.
+    let split = buffer.indexOf("\n\n");
+    for (; split >= 0; split = buffer.indexOf("\n\n")) {
+      const frame = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      let name = "message";
+      let data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event: ")) name = line.slice(7);
+        else if (line.startsWith("data: ")) data += line.slice(6);
+      }
+      if (!data) continue;
+      const parsed = JSON.parse(data);
+      if (name === "text") events.onText?.(parsed.delta as string);
+      else if (name === "tool") events.onTool?.(parsed as ToolCall);
+      else if (name === "done") finished = parsed as Reply;
+      else if (name === "error") throw new Error(parsed.message as string);
+    }
+    if (done) break;
+  }
+  if (!finished) {
+    throw new Error("The agent's reply ended before it finished.");
+  }
+  return finished;
+}
+
+/**
+ * A turn: the opening check-in when `text` is null, the founder's message otherwise.
+ *
+ * One hook for both, because they are the same call on the backend — which is also why
+ * reopening the app is instant: a conversation already under way replays its last reply
+ * instead of paying for another one.
+ */
+export function useTurn() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (text: string) =>
-      apiFetch<Reply>("/chat/message", {
-        method: "POST",
-        body: JSON.stringify({ text }),
-      }),
+    mutationFn: ({ text, ...events }: { text: string | null } & TurnEvents) =>
+      streamTurn(text, events),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["pace", "state"] }),
   });
 }

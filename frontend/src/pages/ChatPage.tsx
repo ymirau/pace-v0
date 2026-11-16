@@ -1,15 +1,27 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  usePaceState,
-  useOpenSession,
-  useResetPace,
-  useSendMessage,
-  type Reply,
-  type ToolCall,
-} from "../api/chat";
+import { usePaceState, useResetPace, useTurn, type Reply, type ToolCall } from "../api/chat";
 import RateBar from "../components/pace/RateBar";
 import StatePanel from "../components/pace/StatePanel";
+
+/**
+ * What each tool means in words the founder would use.
+ *
+ * A turn is seconds of the model generating and nothing makes that shorter, so the wait
+ * at least says what is happening: the agent announces each tool as it reaches for it.
+ */
+const DOING: Record<string, string> = {
+  get_overview: "reading your work",
+  find_tasks: "going through your tasks",
+  check_timeline: "checking your dates",
+  propose_plan: "drafting a plan",
+  apply_proposal: "locking it in",
+  reject_proposal: "noting that down",
+  create_tasks: "writing that down",
+  update_tasks: "updating your tasks",
+  set_business: "saving your details",
+  add_people: "adding your people",
+};
 
 interface Turn {
   who: "pace" | "you";
@@ -62,35 +74,98 @@ function Bubble({ turn }: { turn: Turn }) {
   );
 }
 
+/** The turn in flight: what it has reached for, and whatever it has written so far. */
+interface Live {
+  tools: ToolCall[];
+  text: string;
+}
+
+/**
+ * The turn in flight. Shows the tools as chips the moment each one is called, a line
+ * saying what it is doing in plain words, and the reply as it arrives.
+ *
+ * It reads as one bubble that fills in, rather than a spinner followed by a wall of
+ * text — the turn itself is no shorter, but the founder can see it is working and on
+ * what. No rating bar: a half-written reply isn't a turn to score yet.
+ */
+function LiveBubble({ live }: { live: Live }) {
+  const last = live.tools[live.tools.length - 1];
+  const doing = live.text
+    ? null
+    : last
+      ? (DOING[last.name] ?? `running ${last.name}`)
+      : "reading your work";
+  return (
+    <div className="flex justify-start">
+      <div className="w-full max-w-[42rem]">
+        <ToolTrace tools={live.tools} />
+        <div className="rounded-2xl rounded-bl-sm bg-surface px-4 py-3 ring-1 ring-slate-200">
+          {live.text ? (
+            <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-slate-800">
+              {live.text}
+            </p>
+          ) : (
+            <p className="animate-pulse text-[15px] text-slate-500">Pace is {doing}…</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const state = usePaceState();
-  const open = useOpenSession();
-  const send = useSendMessage();
+  const turnMutation = useTurn();
   const reset = useResetPace();
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [live, setLive] = useState<Live | null>(null);
   const [draft, setDraft] = useState("");
   const opened = useRef(false);
   const bottom = useRef<HTMLDivElement>(null);
-  const busy = open.isPending || send.isPending;
+  const busy = turnMutation.isPending;
+
+  /** Run a turn, showing its tools and text as they arrive. `null` is the check-in. */
+  const run = useCallback(
+    (text: string | null) => {
+      setLive({ tools: [], text: "" });
+      turnMutation.mutate(
+        {
+          text,
+          onTool: (t) => setLive((l) => ({ ...(l ?? { text: "" }), tools: [...(l?.tools ?? []), t] })),
+          onText: (d) =>
+            setLive((l) => ({ tools: l?.tools ?? [], text: (l?.text ?? "") + d })),
+        },
+        {
+          onSuccess: (r: Reply) => {
+            setLive(null);
+            setTurns((t) => [
+              ...t,
+              {
+                who: "pace",
+                text: r.text,
+                tools: r.tool_calls,
+                proactive: r.proactive,
+                sessionId: r.session_id,
+                turn: r.turn,
+              },
+            ]);
+          },
+          onError: (err: Error) => {
+            setLive(null);
+            setTurns((t) => [...t, { who: "pace", text: `— couldn't reach the agent: ${err.message}` }]);
+          },
+        },
+      );
+    },
+    [turnMutation],
+  );
 
   // The agent speaks first. Once per mount, not on every re-render.
   useEffect(() => {
     if (opened.current) return;
     opened.current = true;
-    open.mutate(undefined, {
-      onSuccess: (r: Reply) =>
-        setTurns([
-          {
-            who: "pace",
-            text: r.text,
-            tools: r.tool_calls,
-            proactive: true,
-            sessionId: r.session_id,
-            turn: r.turn,
-          },
-        ]),
-    });
-  }, [open]);
+    run(null);
+  }, [run]);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
@@ -104,21 +179,7 @@ export default function ChatPage() {
     if (!text || busy) return;
     setDraft("");
     setTurns((t) => [...t, { who: "you", text }]);
-    send.mutate(text, {
-      onSuccess: (r: Reply) =>
-        setTurns((t) => [
-          ...t,
-          {
-            who: "pace",
-            text: r.text,
-            tools: r.tool_calls,
-            sessionId: r.session_id,
-            turn: r.turn,
-          },
-        ]),
-      onError: (err: Error) =>
-        setTurns((t) => [...t, { who: "pace", text: `— couldn't reach the agent: ${err.message}` }]),
-    });
+    run(text);
   }
 
   function onReset(seed: string) {
@@ -130,20 +191,7 @@ export default function ChatPage() {
     reset.mutate(seed, {
       onSuccess: () => {
         setTurns([]);
-        opened.current = false;
-        open.mutate(undefined, {
-          onSuccess: (r: Reply) =>
-            setTurns([
-              {
-                who: "pace",
-                text: r.text,
-                tools: r.tool_calls,
-                proactive: true,
-                sessionId: r.session_id,
-                turn: r.turn,
-              },
-            ]),
-        });
+        run(null);
       },
     });
   }
@@ -191,16 +239,7 @@ export default function ChatPage() {
           {turns.map((t, i) => (
             <Bubble key={i} turn={t} />
           ))}
-          {busy ? (
-            <p className="animate-pulse text-sm text-slate-400">
-              {turns.length ? "Pace is working…" : "Pace is reading your work…"}
-            </p>
-          ) : null}
-          {open.isError ? (
-            <p className="text-sm text-red-600">
-              Couldn&apos;t reach the agent: {(open.error as Error).message}
-            </p>
-          ) : null}
+          {live ? <LiveBubble live={live} /> : null}
           {reset.isError ? (
             <p className="text-sm text-red-600">
               Reset failed: {(reset.error as Error).message}

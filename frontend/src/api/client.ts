@@ -121,11 +121,11 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
 
-/** Fetch wrapper that injects the bearer token (unless bypassed) and JSON headers. */
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** The headers every call needs: JSON, the bearer token unless bypassed, the gate code. */
+async function apiHeaders(extra?: HeadersInit): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(init.headers as Record<string, string>),
+    ...(extra as Record<string, string>),
   };
   if (!AUTH_BYPASS) {
     headers.Authorization = `Bearer ${await getAccessToken()}`;
@@ -135,6 +135,32 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (code) {
     headers["X-Pace-Access-Code"] = code;
   }
+  return headers;
+}
+
+/**
+ * Like {@link apiFetch} but hands back the live {@link Response} instead of parsed
+ * JSON, so the caller can read the body as it arrives. Used for the chat's
+ * `text/event-stream` turns (`src/api/chat.ts`); an error status is still raised as an
+ * {@link ApiError}, because at that point nothing has been streamed yet.
+ */
+export async function apiStream(path: string, init: RequestInit = {}): Promise<Response> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: await apiHeaders(init.headers),
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, response.statusText, await response.text());
+  }
+  if (!response.body) {
+    throw new Error("This browser gave no readable body for the streamed reply.");
+  }
+  return response;
+}
+
+/** Fetch wrapper that injects the bearer token (unless bypassed) and JSON headers. */
+export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = await apiHeaders(init.headers);
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
 
   if (!response.ok) {

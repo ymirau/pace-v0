@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -31,6 +32,19 @@ async def dispose_engine() -> None:
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
+    assert _session_factory is not None, "Engine not initialized — did lifespan run?"
+    async with _session_factory() as session:
+        yield session
+
+
+@asynccontextmanager
+async def session_scope() -> AsyncIterator[AsyncSession]:
+    """A session not tied to the request's dependency teardown.
+
+    FastAPI closes a `Depends(get_session)` session before a streaming response has
+    finished sending, so a handler that keeps working while it streams (see
+    `app/routers/chat.py`) has to own its session.
+    """
     assert _session_factory is not None, "Engine not initialized — did lifespan run?"
     async with _session_factory() as session:
         yield session

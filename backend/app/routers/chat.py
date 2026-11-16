@@ -13,20 +13,31 @@ Business state (projects, tasks, proposals) lives in Postgres too, as one JSONB
 document (`app/services/state_store.py`). The engine still mutates a plain dict in place
 exactly as it does on a laptop; this layer just loads it before the turn and writes it
 back after. Last write wins — honest for one founder, not a multi-user design.
+
+**A turn takes seconds, and the engine is blocking.** The opening check-in is two API
+calls and about 7s of generation; `/stream` sends what the agent is doing as it happens
+so the wait is visible, and every route runs the engine in a worker thread so one turn
+can't freeze the rest of the API (`/state`, `/log`) behind it.
 """
 
+import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
+from functools import partial
 from typing import Annotated
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import iterate_in_threadpool
 
 from app.core.config import Settings, get_settings
 from app.core.gate import require_access_code
 from app.core.security import get_current_user
 from app.pace import store
-from app.pace.agent import Agent, session_meta
+from app.pace.agent import Agent, opening, session_meta
 from app.pace.logger import Logger
 from app.schemas.chat import (
     MessageSend,
@@ -35,10 +46,11 @@ from app.schemas.chat import (
     Reply,
     ResetRequest,
     StateRead,
+    StreamSend,
     Task,
 )
 from app.services import chat_log, state_store
-from app.sources.postgres.session import get_session
+from app.sources.postgres.session import get_session, session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +65,6 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 _CACHE: dict[str, Agent] = {}
-
-OPEN = "[session_open: today is {}]"
 
 
 def _require_key(settings: Settings) -> str:
@@ -108,7 +118,11 @@ async def _agent(db: AsyncSession, settings: Settings, *, resume: bool = True) -
 async def _reply(
     db: AsyncSession, agent: Agent, text: str, *, hidden: bool, proactive: bool
 ) -> Reply:
-    out = agent.send(text, hidden=hidden, proactive=proactive)
+    # agent.send blocks for seconds on the Anthropic API. On one uvicorn worker that
+    # would stall every other request, /state and /log included, until the turn landed.
+    out = await anyio.to_thread.run_sync(
+        partial(agent.send, text, hidden=hidden, proactive=proactive)
+    )
     # The business state is NOT best-effort: losing it means losing the user's work, so
     # a failure here should surface rather than be swallowed.
     await state_store.save(db, agent.state)
@@ -131,43 +145,143 @@ async def _reply(
     )
 
 
+def _resumed(agent: Agent) -> Reply | None:
+    """The last thing the agent said, when this is a conversation already under way.
+
+    A reopened session must not greet twice, and replaying costs no API call — which is
+    why relaunching the app is instant and only a fresh session waits for the model.
+    """
+    if not agent.messages:
+        return None
+    last = next((m for m in reversed(agent.messages) if m.get("role") == "assistant"), None)
+    if not last:
+        return None
+    text = "".join(b.get("text", "") for b in last["content"] if b.get("type") == "text").strip()
+    if not text:
+        return None
+    return Reply(
+        text=text,
+        session_id=agent.log.session,
+        turn=agent.turn,
+        proactive=True,
+        tool_calls=[],
+        cap_hit=False,
+    )
+
+
+async def _check_in(db: AsyncSession, agent: Agent) -> str:
+    """The hidden opening message, and the clock catch-up that goes with it."""
+    gap = store.sync_clock(agent.state)
+    if gap:
+        await state_store.save(db, agent.state)
+        agent.log.clock("elapsed", gap, "", agent.state["clock"]["today"])
+    return opening(agent.state, gap)
+
+
 @router.post("/open", response_model=Reply)
 async def open_session(db: SessionDep, settings: SettingsDep) -> Reply:
     """The proactive check-in: the agent speaks before the founder types anything."""
     agent = await _agent(db, settings)
-    if agent.messages:
-        # Resumed conversation — don't make it greet twice. Replay the last thing it said.
-        last = next(
-            (m for m in reversed(agent.messages) if m.get("role") == "assistant"),
-            None,
-        )
-        if last:
-            text = "".join(
-                b.get("text", "") for b in last["content"] if b.get("type") == "text"
-            ).strip()
-            if text:
-                return Reply(
-                    text=text,
-                    session_id=agent.log.session,
-                    turn=agent.turn,
-                    proactive=True,
-                    tool_calls=[],
-                    cap_hit=False,
-                )
-    gap = store.sync_clock(agent.state)
-    if gap:
-        await state_store.save(db, agent.state)
-    opening = OPEN.format(agent.state["clock"]["today"])
-    if gap:
-        agent.log.clock("elapsed", gap, "", agent.state["clock"]["today"])
-        opening += f" [{gap} days since the founder last opened this]"
-    return await _reply(db, agent, opening, hidden=True, proactive=True)
+    resumed = _resumed(agent)
+    if resumed:
+        return resumed
+    return await _reply(db, agent, await _check_in(db, agent), hidden=True, proactive=True)
 
 
 @router.post("/message", response_model=Reply)
 async def send_message(payload: MessageSend, db: SessionDep, settings: SettingsDep) -> Reply:
     agent = await _agent(db, settings)
     return await _reply(db, agent, payload.text, hidden=False, proactive=False)
+
+
+def _sse(event: str, data: object) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post("/stream")
+async def stream_turn(payload: StreamSend, settings: SettingsDep) -> StreamingResponse:
+    """The same turn as ``/open`` and ``/message``, sent as it happens.
+
+    Events: ``tool`` each time the agent reaches for something, ``text`` as it writes,
+    ``done`` with the finished Reply, ``error`` if the turn fell over.
+
+    This does not make a turn shorter — the time is the model generating, and that was
+    measured: caching the 3.9k-token tools-and-prompt prefix and cutting a round trip
+    both came out inside the noise. What it changes is that the founder can see the turn
+    happening from about three seconds in, instead of watching nothing for seven.
+
+    Pace's replies are short on purpose, and a short reply arrives from the API in one
+    burst once it is finished, so the per-word effect only shows on a long one. The
+    reliable signal is the tool events.
+
+    The session is this handler's own: FastAPI closes a `Depends` session before a
+    streaming body is finished, and this one is still writing state and log after the
+    last event.
+    """
+    _require_key(settings)
+
+    async def events() -> AsyncIterator[str]:
+        async with session_scope() as db:
+            agent = await _agent(db, settings)
+            proactive = payload.text is None
+            if proactive:
+                resumed = _resumed(agent)
+                if resumed:
+                    yield _sse("done", resumed.model_dump())
+                    return
+                text = await _check_in(db, agent)
+            else:
+                text = payload.text or ""
+
+            reply = ""
+            turn = agent.stream(text, hidden=proactive, proactive=proactive)
+            try:
+                # iterate_in_threadpool runs each next() on a worker thread, so the
+                # blocking engine never sits on the event loop.
+                async for kind, data in iterate_in_threadpool(turn):
+                    if kind == "done":
+                        reply = data
+                    elif kind == "text":
+                        yield _sse("text", {"delta": data})
+                    else:
+                        yield _sse("tool", data)
+            except Exception as e:  # the stream has to report its own failure
+                logger.exception("The turn failed mid-stream.")
+                yield _sse("error", {"message": f"{type(e).__name__}: {e}"})
+                return
+
+            # Same order as /message: state is not best-effort, the log is.
+            await state_store.save(db, agent.state)
+            try:
+                await chat_log.add_events(db, agent.log.session, agent.log.drain())
+                await chat_log.save_messages(db, agent.log.session, agent.messages)
+            except Exception:
+                logger.warning(
+                    "Could not persist the chat log; the reply still stands.", exc_info=True
+                )
+
+            yield _sse(
+                "done",
+                Reply(
+                    text=reply,
+                    session_id=agent.log.session,
+                    turn=agent.turn,
+                    proactive=proactive,
+                    tool_calls=[
+                        {"name": c["name"], "input": c["input"]}
+                        for c in getattr(agent, "last_tool_calls", [])
+                    ],
+                    cap_hit=getattr(agent, "last_cap_hit", False),
+                ).model_dump(),
+            )
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        # Caddy and Azure App Proxy sit in front of this; without these a proxy can hold
+        # the whole body back and undo the point of streaming.
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/rate", status_code=status.HTTP_204_NO_CONTENT)

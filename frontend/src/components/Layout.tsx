@@ -66,7 +66,10 @@ const ICONS: Record<string, ReactNode> = {
 };
 
 // Pace is one screen. The nav rail stays for the header/settings chrome.
-const NAV: NavEntry[] = [{ to: "/", label: "Pace", icon: "home", end: true }];
+const NAV: NavEntry[] = [
+  { to: "/", label: "Pace", icon: "home", end: true },
+  { to: "/log", label: "Log", icon: "samples", end: false },
+];
 
 export default function Layout() {
   const { instance, accounts } = useMsal();

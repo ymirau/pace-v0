@@ -8,6 +8,7 @@ import {
   type Reply,
   type ToolCall,
 } from "../api/chat";
+import RateBar from "../components/pace/RateBar";
 import StatePanel from "../components/pace/StatePanel";
 
 interface Turn {
@@ -15,6 +16,9 @@ interface Turn {
   text: string;
   tools?: ToolCall[];
   proactive?: boolean;
+  /** Set on Pace turns, so the rating can be attached to the right turn. */
+  sessionId?: string;
+  turn?: number;
 }
 
 /** Grey one-liner showing what the agent looked at, like the terminal's → lines. */
@@ -50,6 +54,9 @@ function Bubble({ turn }: { turn: Turn }) {
         >
           <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{turn.text}</p>
         </div>
+        {!mine && turn.sessionId && turn.turn ? (
+          <RateBar sessionId={turn.sessionId} turn={turn.turn} />
+        ) : null}
       </div>
     </div>
   );
@@ -72,7 +79,16 @@ export default function ChatPage() {
     opened.current = true;
     open.mutate(undefined, {
       onSuccess: (r: Reply) =>
-        setTurns([{ who: "pace", text: r.text, tools: r.tool_calls, proactive: true }]),
+        setTurns([
+          {
+            who: "pace",
+            text: r.text,
+            tools: r.tool_calls,
+            proactive: true,
+            sessionId: r.session_id,
+            turn: r.turn,
+          },
+        ]),
     });
   }, [open]);
 
@@ -90,7 +106,16 @@ export default function ChatPage() {
     setTurns((t) => [...t, { who: "you", text }]);
     send.mutate(text, {
       onSuccess: (r: Reply) =>
-        setTurns((t) => [...t, { who: "pace", text: r.text, tools: r.tool_calls }]),
+        setTurns((t) => [
+          ...t,
+          {
+            who: "pace",
+            text: r.text,
+            tools: r.tool_calls,
+            sessionId: r.session_id,
+            turn: r.turn,
+          },
+        ]),
       onError: (err: Error) =>
         setTurns((t) => [...t, { who: "pace", text: `— couldn't reach the agent: ${err.message}` }]),
     });
@@ -108,7 +133,16 @@ export default function ChatPage() {
         opened.current = false;
         open.mutate(undefined, {
           onSuccess: (r: Reply) =>
-            setTurns([{ who: "pace", text: r.text, tools: r.tool_calls, proactive: true }]),
+            setTurns([
+              {
+                who: "pace",
+                text: r.text,
+                tools: r.tool_calls,
+                proactive: true,
+                sessionId: r.session_id,
+                turn: r.turn,
+              },
+            ]),
         });
       },
     });

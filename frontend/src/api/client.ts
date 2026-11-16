@@ -1,5 +1,6 @@
 import { InteractionRequiredAuthError } from "@azure/msal-browser";
 
+import { getAccessCode } from "../accessCode";
 import { apiRequest } from "../authConfig";
 import { AUTH_BYPASS } from "../authBypass";
 import { reportAuthFailure } from "../authRecovery";
@@ -128,6 +129,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   };
   if (!AUTH_BYPASS) {
     headers.Authorization = `Bearer ${await getAccessToken()}`;
+  }
+  // The deployed app's shared gate. Absent locally, where the backend leaves it open.
+  const code = getAccessCode();
+  if (code) {
+    headers["X-Pace-Access-Code"] = code;
   }
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
 

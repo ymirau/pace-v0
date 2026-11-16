@@ -2,36 +2,56 @@
 
 The engine is the terminal spike's, vendored unchanged under ``app/pace`` — one
 implementation, so the UI and the terminal can't drift into disagreeing about what the
-agent does. State is the spike's JSON file, not Postgres: single user, one founder
-looking at their own business.
+agent does.
 
-Two consequences worth knowing. The conversation lives in memory, keyed by a session id,
-so a backend restart starts a new conversation (the transcript on disk survives). And the
-Anthropic SDK is synchronous, so every handler here is a plain ``def`` — FastAPI runs
-those in a worker thread instead of blocking the event loop.
+**The conversation lives in Postgres, not in this process.** A serverless request can
+land on a cold worker, so every turn loads the history from `chat_sessions.messages`,
+runs, and writes it back. An in-process cache is kept only to skip that round trip when
+the same worker happens to serve the next request.
+
+Business state (projects, tasks, proposals) is still the spike's JSON file. It is
+single-user and not concurrency-safe, which is honest for one founder looking at their
+own work and would not survive a second user.
 """
 
+import logging
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
+from app.core.gate import require_access_code
 from app.core.security import get_current_user
 from app.pace import store
 from app.pace.agent import Agent, session_meta
 from app.pace.logger import Logger
-from app.schemas.chat import MessageSend, Project, Reply, ResetRequest, StateRead, Task
+from app.schemas.chat import (
+    MessageSend,
+    Project,
+    RatingSend,
+    Reply,
+    ResetRequest,
+    StateRead,
+    Task,
+)
+from app.services import chat_log
+from app.sources.postgres.session import get_session
 
-# Mounted under /api in main.py.
-router = APIRouter(prefix="/chat", tags=["chat"], dependencies=[Depends(get_current_user)])
+logger = logging.getLogger(__name__)
+
+# Mounted under /api in main.py. Every route needs a token AND the shared code.
+router = APIRouter(
+    prefix="/chat",
+    tags=["chat"],
+    dependencies=[Depends(get_current_user), Depends(require_access_code)],
+)
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
-# One conversation per process. A dict is the right size of machinery for a spike that
-# one person looks at; it is explicitly not multi-user or restart-proof.
-_SESSIONS: dict[str, Agent] = {}
-_CURRENT: dict[str, str] = {}
+_CACHE: dict[str, Agent] = {}
 
 OPEN = "[session_open: today is {}]"
 
@@ -40,72 +60,155 @@ def _require_key(settings: Settings) -> str:
     if not settings.anthropic_api_key:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            "ANTHROPIC_API_KEY is not set in backend/.env, so the agent can't be reached.",
+            "ANTHROPIC_API_KEY is not set, so the agent can't be reached.",
         )
     return settings.anthropic_api_key
 
 
-def _agent(settings: Settings) -> Agent:
-    """The live conversation, created on first use."""
+async def _agent(db: AsyncSession, settings: Settings, *, resume: bool = True) -> Agent:
+    """The live conversation. Resumed from Postgres when this worker has never seen it."""
     key = _require_key(settings)
-    sid = _CURRENT.get("id")
-    if sid and sid in _SESSIONS:
-        return _SESSIONS[sid]
     state = store.load()
-    log = Logger(*session_meta(), state["clock"]["today"], state.get("seed", "example"))
+    seed = state.get("seed", "example")
+
+    sid = await chat_log.latest_session_id(db, seed) if resume else None
+    if sid and sid in _CACHE:
+        agent = _CACHE[sid]
+        agent.state = state
+        return agent
+
+    model, prompt_version = session_meta()
+    log = Logger(model, prompt_version, state["clock"]["today"], seed)
+    if sid:
+        log.session = sid  # keep logging into the session we are resuming
     agent = Agent(state, log, api_key=key, model=settings.pace_model)
-    sid = uuid.uuid4().hex[:8]
-    _SESSIONS[sid] = agent
-    _CURRENT["id"] = sid
+
+    await chat_log.ensure_session(
+        db,
+        id=log.session,
+        model=model,
+        prompt_version=prompt_version,
+        seed=seed,
+        sim_today=state["clock"]["today"],
+        founder=state["founder"],
+    )
+    if sid:
+        stored = await chat_log.load_messages(db, sid)
+        if stored:
+            agent.messages = stored
+            # Turn numbering continues from the stored history, so a rating made after
+            # a cold start still points at the turn the reviewer actually read.
+            agent.turn = sum(1 for m in stored if m.get("role") == "user")
+    _CACHE.clear()
+    _CACHE[log.session] = agent
     return agent
 
 
-def _reply(agent: Agent, text: str, *, hidden: bool, proactive: bool) -> Reply:
+async def _reply(
+    db: AsyncSession, agent: Agent, text: str, *, hidden: bool, proactive: bool
+) -> Reply:
     out = agent.send(text, hidden=hidden, proactive=proactive)
-    calls = [
-        {"name": c["name"], "input": c["input"]} for c in getattr(agent, "last_tool_calls", [])
-    ]
+    # Best-effort: a chat that 500s because the log was down is worse than a lost line.
+    try:
+        await chat_log.add_events(db, agent.log.session, agent.log.drain())
+        await chat_log.save_messages(db, agent.log.session, agent.messages)
+    except Exception:
+        logger.warning("Could not persist the chat log; the reply still stands.", exc_info=True)
     return Reply(
         text=out,
+        session_id=agent.log.session,
         turn=agent.turn,
         proactive=proactive,
-        tool_calls=calls,
+        tool_calls=[
+            {"name": c["name"], "input": c["input"]} for c in getattr(agent, "last_tool_calls", [])
+        ],
         cap_hit=getattr(agent, "last_cap_hit", False),
     )
 
 
 @router.post("/open", response_model=Reply)
-def open_session(settings: SettingsDep) -> Reply:
-    """The proactive check-in. The agent speaks before the founder types anything —
-    the whole point of the product, so the UI calls this on load."""
-    agent = _agent(settings)
+async def open_session(db: SessionDep, settings: SettingsDep) -> Reply:
+    """The proactive check-in: the agent speaks before the founder types anything."""
+    agent = await _agent(db, settings)
+    if agent.messages:
+        # Resumed conversation — don't make it greet twice. Replay the last thing it said.
+        last = next(
+            (m for m in reversed(agent.messages) if m.get("role") == "assistant"),
+            None,
+        )
+        if last:
+            text = "".join(
+                b.get("text", "") for b in last["content"] if b.get("type") == "text"
+            ).strip()
+            if text:
+                return Reply(
+                    text=text,
+                    session_id=agent.log.session,
+                    turn=agent.turn,
+                    proactive=True,
+                    tool_calls=[],
+                    cap_hit=False,
+                )
     gap = store.sync_clock(agent.state)
     opening = OPEN.format(agent.state["clock"]["today"])
     if gap:
         agent.log.clock("elapsed", gap, "", agent.state["clock"]["today"])
         opening += f" [{gap} days since the founder last opened this]"
-    return _reply(agent, opening, hidden=True, proactive=True)
+    return await _reply(db, agent, opening, hidden=True, proactive=True)
 
 
 @router.post("/message", response_model=Reply)
-def send_message(payload: MessageSend, settings: SettingsDep) -> Reply:
-    return _reply(_agent(settings), payload.text, hidden=False, proactive=False)
+async def send_message(payload: MessageSend, db: SessionDep, settings: SettingsDep) -> Reply:
+    agent = await _agent(db, settings)
+    return await _reply(db, agent, payload.text, hidden=False, proactive=False)
+
+
+@router.post("/rate", status_code=status.HTTP_204_NO_CONTENT)
+async def rate_turn(payload: RatingSend, db: SessionDep) -> None:
+    """Score a turn: 0 used as-is, 1 light edits, 2 heavy edits, 3 redid it myself,
+    plus how it felt. This is the evidence the v0 verdict is written from."""
+    await chat_log.rate(
+        db, payload.session_id, payload.turn, payload.score, payload.feel, payload.note
+    )
+    await chat_log.add_events(
+        db,
+        payload.session_id,
+        [
+            {
+                "type": "rating",
+                "turn": payload.turn,
+                "score": payload.score,
+                "feel": payload.feel,
+                "note": payload.note,
+            }
+        ],
+    )
 
 
 @router.post("/reset", response_model=StateRead)
-def reset(payload: ResetRequest) -> StateRead:
-    """Reload a seed and drop the conversation, like the terminal's /reset."""
+async def reset(payload: ResetRequest, db: SessionDep) -> StateRead:
+    """Reload a seed and start a new conversation. The old session's log is kept."""
     try:
         state = store.reset(payload.seed)
     except FileNotFoundError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
-    _SESSIONS.clear()
-    _CURRENT.clear()
+    _CACHE.clear()
+    # A fresh session row, so the next /open greets instead of resuming.
+    model, prompt_version = session_meta()
+    await chat_log.ensure_session(
+        db,
+        id=uuid.uuid4().hex[:8],
+        model=model,
+        prompt_version=prompt_version,
+        seed=state.get("seed", "example"),
+        sim_today=state["clock"]["today"],
+        founder=state["founder"],
+    )
     return _state_read(state)
 
 
 @router.get("/state", response_model=StateRead)
-def read_state() -> StateRead:
+async def read_state() -> StateRead:
     state = store.load()
     store.sync_clock(state)
     return _state_read(state)

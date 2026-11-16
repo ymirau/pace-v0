@@ -110,11 +110,23 @@ class Agent:
                 self.log.write(
                     "refusal", turn=self.turn, detail=str(getattr(r, "stop_details", None))
                 )
-                self.messages.append({"role": "assistant", "content": r.content})
+                self.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": [b.model_dump(mode="json") for b in r.content],
+                    }
+                )
                 break
 
-            # Append-only: the whole content block list, thinking included.
-            self.messages.append({"role": "assistant", "content": r.content})
+            # Append-only: the whole content block list, thinking included. Dumped to
+            # plain JSON so the history can be stored and replayed verbatim on a cold
+            # process — model_dump keeps every field, thinking signatures included.
+            self.messages.append(
+                {
+                    "role": "assistant",
+                    "content": [b.model_dump(mode="json") for b in r.content],
+                }
+            )
 
             if r.stop_reason == "pause_turn":
                 continue

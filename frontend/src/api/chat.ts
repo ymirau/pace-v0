@@ -10,6 +10,7 @@ export interface ToolCall {
 
 export interface Reply {
   text: string;
+  session_id: string;
   turn: number;
   proactive: boolean;
   tool_calls: ToolCall[];
@@ -104,6 +105,16 @@ export function useSendMessage() {
         body: JSON.stringify({ text }),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["pace", "state"] }),
+  });
+}
+
+/** Score a turn: 0 used as-is … 3 redid it myself, plus how it felt. */
+export function useRateTurn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (r: { session_id: string; turn: number; score: number; feel: string; note?: string }) =>
+      apiFetch<void>("/chat/rate", { method: "POST", body: JSON.stringify({ note: "", ...r }) }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["log"] }),
   });
 }
 

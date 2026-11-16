@@ -12,8 +12,17 @@ class ToolCall(BaseModel):
     input: dict
 
 
+class RatingSend(BaseModel):
+    session_id: str
+    turn: int = Field(ge=1)
+    score: int = Field(ge=0, le=3, description="0 used as-is … 3 redid it myself")
+    feel: str = Field(pattern="^(magic|annoying|meh)$")
+    note: str = Field("", max_length=1000)
+
+
 class Reply(BaseModel):
     text: str
+    session_id: str
     turn: int
     proactive: bool
     tool_calls: list[ToolCall]

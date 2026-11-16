@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field("", alias="ANTHROPIC_API_KEY")
     pace_model: str = Field("claude-sonnet-5-5", alias="PACE_MODEL")
     pace_seed: str = Field("example", alias="PACE_SEED")
+    # A shared code the SPA sends as X-Pace-Access-Code. Empty = gate open (local
+    # dev only). Set it in every deployed env: the chat spends real money.
+    pace_access_code: str = Field("", alias="PACE_ACCESS_CODE")
 
     # --- Postgres (shared Synveon instance) ---
     # pytest runs against this same URL and rolls back every change; CI points it

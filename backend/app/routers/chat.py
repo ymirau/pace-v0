@@ -9,9 +9,10 @@ land on a cold worker, so every turn loads the history from `chat_sessions.messa
 runs, and writes it back. An in-process cache is kept only to skip that round trip when
 the same worker happens to serve the next request.
 
-Business state (projects, tasks, proposals) is still the spike's JSON file. It is
-single-user and not concurrency-safe, which is honest for one founder looking at their
-own work and would not survive a second user.
+Business state (projects, tasks, proposals) lives in Postgres too, as one JSONB
+document (`app/services/state_store.py`). The engine still mutates a plain dict in place
+exactly as it does on a laptop; this layer just loads it before the turn and writes it
+back after. Last write wins — honest for one founder, not a multi-user design.
 """
 
 import logging
@@ -36,7 +37,7 @@ from app.schemas.chat import (
     StateRead,
     Task,
 )
-from app.services import chat_log
+from app.services import chat_log, state_store
 from app.sources.postgres.session import get_session
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ def _require_key(settings: Settings) -> str:
 async def _agent(db: AsyncSession, settings: Settings, *, resume: bool = True) -> Agent:
     """The live conversation. Resumed from Postgres when this worker has never seen it."""
     key = _require_key(settings)
-    state = store.load()
+    state = await state_store.load(db, settings.pace_seed)
     seed = state.get("seed", "example")
 
     sid = await chat_log.latest_session_id(db, seed) if resume else None
@@ -108,7 +109,11 @@ async def _reply(
     db: AsyncSession, agent: Agent, text: str, *, hidden: bool, proactive: bool
 ) -> Reply:
     out = agent.send(text, hidden=hidden, proactive=proactive)
-    # Best-effort: a chat that 500s because the log was down is worse than a lost line.
+    # The business state is NOT best-effort: losing it means losing the user's work, so
+    # a failure here should surface rather than be swallowed.
+    await state_store.save(db, agent.state)
+    # The log is best-effort — a chat that 500s because logging was down is worse than
+    # a lost line.
     try:
         await chat_log.add_events(db, agent.log.session, agent.log.drain())
         await chat_log.save_messages(db, agent.log.session, agent.messages)
@@ -150,6 +155,8 @@ async def open_session(db: SessionDep, settings: SettingsDep) -> Reply:
                     cap_hit=False,
                 )
     gap = store.sync_clock(agent.state)
+    if gap:
+        await state_store.save(db, agent.state)
     opening = OPEN.format(agent.state["clock"]["today"])
     if gap:
         agent.log.clock("elapsed", gap, "", agent.state["clock"]["today"])
@@ -189,7 +196,7 @@ async def rate_turn(payload: RatingSend, db: SessionDep) -> None:
 async def reset(payload: ResetRequest, db: SessionDep) -> StateRead:
     """Reload a seed and start a new conversation. The old session's log is kept."""
     try:
-        state = store.reset(payload.seed)
+        state = await state_store.reset(db, payload.seed)
     except FileNotFoundError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     _CACHE.clear()
@@ -208,9 +215,10 @@ async def reset(payload: ResetRequest, db: SessionDep) -> StateRead:
 
 
 @router.get("/state", response_model=StateRead)
-async def read_state() -> StateRead:
-    state = store.load()
-    store.sync_clock(state)
+async def read_state(db: SessionDep, settings: SettingsDep) -> StateRead:
+    state = await state_store.load(db, settings.pace_seed)
+    if store.sync_clock(state):
+        await state_store.save(db, state)  # a real-time seed's clock moved
     return _state_read(state)
 
 

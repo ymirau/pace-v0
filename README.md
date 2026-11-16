@@ -89,7 +89,7 @@ Two stores, on purpose:
 |---|---|---|
 | The **log** — sessions, turns, tool calls, ratings | **Postgres** (`pace.chat_*`) | It has to survive a restart and a redeploy, and be queryable for the stats. This is v0's actual deliverable. |
 | The **conversation** — the Messages API history | **Postgres** (`chat_sessions.messages`) | A serverless request can land on a cold worker. Each turn loads the history, runs, writes it back. |
-| The **business** — projects, tasks, proposals | JSON file (`app/pace/data/state.json`) | Shared verbatim with the terminal spike, so the two can't drift on what the agent does. Single-user, no locking. |
+| The **business** — projects, tasks, proposals | **Postgres** (`pace.pace_state`, one JSONB document) | Survives a restart and a serverless recycle. Stored as one document because the engine owns its shape; normalising it would mean rewriting every tool and splitting the web copy from the terminal one. Last write wins — fine for one founder, not multi-user. |
 
 Log writes are **best-effort**: if Postgres is unreachable the reply still stands and the
 failure is logged. A lost log line is bad; a chat that 500s because the log was down is
@@ -106,7 +106,8 @@ uv sync && cp -n .env.example .env
 #   Fill in ANTHROPIC_API_KEY and POSTGRES_URL (the log needs a database).
 #   AUTH_DISABLED=true is already on, so MSAL is bypassed over plain HTTP.
 # Create the log tables once, as the database OWNER (the app role can't run DDL):
-psql -d <your db> -f sql/postgres/001_schema.sql -f sql/postgres/002_chat.sql
+psql -d <your db> -f sql/postgres/001_schema.sql -f sql/postgres/002_chat.sql \
+     -f sql/postgres/003_state.sql
 psql -d <your db> -f sql/postgres/999_grants.sql
 uv run uvicorn main:app --reload --port 8000
 
@@ -168,14 +169,12 @@ function. Required environment variables on Vercel:
 | `PACE_ACCESS_CODE` | the shared gate. **Without it the URL is an open tap on your API key.** |
 | `AUTH_DISABLED` | `true`, because the reviewer has no Azure account and the access code is the gate instead |
 
-Apply `sql/postgres/001_schema.sql` and `002_chat.sql` to that database first, as its
-owner, then `999_grants.sql`.
+Apply `sql/postgres/001_schema.sql`, `002_chat.sql` and `003_state.sql` to that database
+first, as its owner, then `999_grants.sql`.
 
-**One thing a reviewer must be told:** the *business* state is a JSON file on an
-ephemeral filesystem, so on Vercel projects and tasks reset when a function is recycled.
-The conversation and the log survive, because those are in Postgres. Moving the business
-state into Postgres too is the next piece of work; until then the deployed app is a
-demonstration, not somewhere to keep real work.
+Verified end to end: a task added through the chat survives a cold process restart
+**with `state.json` deleted**, and the conversation resumes from Postgres rather than
+greeting you again. The JSON file is now only a local convenience; Postgres is the truth.
 
 `AUTH_DISABLED=true` outside local dev contradicts the template's invariant 4, and it is
 a deliberate, narrow exception for an unauthenticated review link gated by a shared code.
@@ -191,7 +190,8 @@ Don't carry the pattern into anything real.
 - **Single user, not concurrent-safe.** The JSON store has no locking.
 - **No `/rate`, `/advance` or `/scenario` here.** Ratings and the simulated clock are
   the experiment harness and live in the terminal spike.
-- **Business state is ephemeral on Vercel** (above). Fine locally, where it's a file.
+- **Last write wins on the state document.** No locking, no optimistic concurrency. Two
+  browser tabs would clobber each other.
 - **A UI at all is a departure from the spike's spec**, which says terminal-only until
   the magic-or-annoying verdict is written. Noted so the gate review knows the surface
   came before the answer.

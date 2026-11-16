@@ -114,7 +114,11 @@ def load():
 
 
 def save(state):
-    STATE.write_text(json.dumps(state, indent=2))
+    """Best-effort. On a serverless host the filesystem is read-only and the durable
+    copy lives in Postgres (app/services/state_store.py), so a failure here is not
+    fatal; on a laptop this file IS the store."""
+    with suppress(OSError):
+        STATE.write_text(json.dumps(state, indent=2))
 
 
 def advance(state, days):
@@ -165,13 +169,16 @@ def open_tasks(state, project_id=None):
 
 
 def is_overdue(state, t):
-    return t["status"] != "done" and t["due_date"] and days_until(state, t["due_date"]) < 0
+    """bool, not a truthy value: a task with no due date must answer False, not None.
+    Every seeded task has a date, so this only showed up once the agent created one
+    without — and then the API's response model refused to serialise it."""
+    return bool(t["status"] != "done" and t["due_date"] and days_until(state, t["due_date"]) < 0)
 
 
 def is_stale(state, t):
     """Started-then-abandoned work. A `todo` task isn't stuck, it just hasn't begun —
     so staleness only counts for doing/blocked, or get_overview floods with noise."""
-    return (
+    return bool(
         t["status"] in ("doing", "blocked") and days_since(state, t["last_touched"]) >= STALE_DAYS
     )
 

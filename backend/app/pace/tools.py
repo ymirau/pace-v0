@@ -471,7 +471,33 @@ def check_timeline(state, project_id=None, **_):
     return "\n".join(out)
 
 
+def _people_fields(state, ch):
+    """Resolve assignee_id / waiting_on, which the model readily fills with a NAME.
+
+    It used to be stored verbatim: "Maya" matched no person id, the task rendered as
+    unassigned, and the tool still reported success — so the agent told the founder it
+    had assigned work it hadn't. Resolve what we can and name what we can't, so the
+    agent sees its own mistake in the result.
+    """
+    warnings = []
+    for field in ("assignee_id", "waiting_on"):
+        if field not in ch or ch[field] in (None, ""):
+            continue
+        resolved = _resolve_person(state, ch[field])
+        if store.person(state, resolved) is None:
+            warnings.append(
+                f"! '{ch[field]}' is not a person here — {field} left unset. "
+                f"Known: " + ", ".join(f"{p['id']} {p['name']}" for p in state["people"])
+            )
+            ch[field] = None
+        else:
+            ch[field] = resolved
+    return warnings
+
+
 def _apply_change(state, ch, session, tool):
+    ch = dict(ch)
+    warnings = _people_fields(state, ch)
     action = ch.get("action", "update_task" if ch.get("task_id") else "create_task")
     if action == "create_task":
         pid = ch.get("project_id")
@@ -491,7 +517,10 @@ def _apply_change(state, ch, session, tool):
             "last_touched": state["clock"]["today"],
         }
         state["tasks"].append(t)
-        s = f"created {t['id']} '{t['title']}' in {t['project_id']}"
+        s = (
+            f"created {t['id']} '{t['title']}' in {t['project_id']}, "
+            f"assigned to {store.person_name(state, t['assignee_id'])}"
+        )
     else:
         t = store.task(state, ch.get("task_id"))
         if not t:
@@ -509,7 +538,7 @@ def _apply_change(state, ch, session, tool):
         t["last_touched"] = state["clock"]["today"]
         s = f"{t['id']} '{t['title']}': " + "; ".join(changed)
     store.log_change(state, session, tool, s)
-    return s
+    return "\n".join([s, *warnings]) if warnings else s
 
 
 def propose_plan(state, summary=None, reason=None, changes=None, session=None, **_):

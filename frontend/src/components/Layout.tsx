@@ -2,19 +2,14 @@ import { useMsal } from "@azure/msal-react";
 import { useRef, useState, type ReactNode } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
-import { AUTH_BYPASS } from "../authBypass";
+import { AUTH_BYPASS, AUTH_BYPASS_REASON } from "../authBypass";
 import { ENV_LABEL } from "../env";
-import logo from "../assets/logo.png";
-import logoDark from "../assets/logo_dark.png";
-import { useRole } from "../api/me";
-import { visibleNav } from "../lib/role";
 import { useNavCollapsed } from "./navCollapse";
 import NavRail, { type NavEntry } from "./NavRail";
-import RoleBadge from "./RoleBadge";
+import PaceLogo from "./PaceLogo";
 import ScrollToTopButton from "./ScrollToTopButton";
 import SettingsMenu from "./SettingsMenu";
 import SignOutDialog from "./SignOutDialog";
-import ViewAsBanner from "./ViewAsBanner";
 
 // Per-env badge colors (prod shows no badge). Uses the theme's accent tokens.
 const ENV_BADGE: Record<NonNullable<typeof ENV_LABEL>, string> = {
@@ -69,14 +64,10 @@ const ICONS: Record<string, ReactNode> = {
   ),
 };
 
-// One entry per page. Keep in sync with the routes in routes.tsx. `adminOnly`
-// entries show only to admins and always come LAST (lib/role.ts's visibleNav), so
-// add new pages anywhere above Admin.
+// Pace is one screen. The nav rail stays for the header/settings chrome.
 const NAV: NavEntry[] = [
-  { to: "/", label: "Home", icon: "home", end: true },
-  { to: "/samples", label: "Samples", icon: "samples", end: false },
-  { to: "/support", label: "Support", icon: "support", end: false },
-  { to: "/admin", label: "Admin", icon: "admin", end: false, adminOnly: true },
+  { to: "/", label: "Pace", icon: "home", end: true },
+  { to: "/log", label: "Log", icon: "samples", end: false },
 ];
 
 export default function Layout() {
@@ -86,8 +77,7 @@ export default function Layout() {
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [collapsed, setCollapsed] = useNavCollapsed();
   const onSignOut = AUTH_BYPASS ? undefined : () => setSignOutOpen(true);
-  const { isAdmin } = useRole();
-  const nav = visibleNav(NAV, isAdmin);
+  const nav = NAV;
 
   const envBadge = ENV_LABEL && (
     <span
@@ -111,7 +101,6 @@ export default function Layout() {
           name: account?.name ?? account?.username ?? "Signed in",
           bypassed: AUTH_BYPASS,
           // Its View as menu nests inside the account menu and places itself.
-          badge: <RoleBadge />,
         }}
         onSignOut={onSignOut}
         onExpand={() => setCollapsed(false)}
@@ -122,11 +111,9 @@ export default function Layout() {
       >
         <div className="mb-2 px-4 pb-4">
           <div className="mb-2 mt-1.5 flex items-center justify-between gap-2">
-            {/* The logo's navy lettering vanishes on the dark sidebar, so dark mode
-                swaps in a copy with the lettering recoloured to the dark theme's ink
-                (#e7e1d6); the swoosh and mountain are unchanged. */}
-            <img src={logo} alt="Synveon" className="h-8 w-auto dark:hidden" />
-            <img src={logoDark} alt="Synveon" className="hidden h-8 w-auto dark:block" />
+            {/* One mark for both themes: PaceLogo draws in currentColor, so there is
+                no light/dark pair of images to keep in step. */}
+            <PaceLogo className="text-slate-900" />
             {envBadge}
           </div>
           {/* Truncated so a long project name stays on one line; hover shows it all. */}
@@ -158,14 +145,12 @@ export default function Layout() {
         </nav>
         <div className="flex items-center gap-2 px-4 pt-4 text-[11px] text-slate-500">
           {AUTH_BYPASS ? (
-            <div className="min-w-0 italic">Local dev — auth bypassed</div>
+            <div className="min-w-0 italic">{AUTH_BYPASS_REASON} — auth bypassed</div>
           ) : (
             <div className="min-w-0 truncate" title={account?.username}>
               {account?.name ?? account?.username ?? "Signed in"}
             </div>
           )}
-          {/* Admins only: the role pill, which is also the "View as" control. */}
-          <RoleBadge />
           <div className="ml-auto">
             {/* Collapse, theme toggle, Sign out and the build stamp live in the ⋮ menu. */}
             <SettingsMenu onSignOut={onSignOut} onCollapse={() => setCollapsed(true)} />
@@ -175,7 +160,6 @@ export default function Layout() {
       {/* A column so the View as banner sits flush above <main> and stays put
           while the page scrolls. */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <ViewAsBanner />
         <main ref={mainRef} className="flex-1 overflow-y-auto p-6 pt-4">
           <Outlet />
         </main>

@@ -1,12 +1,11 @@
-"""``GET /api/me``: the caller's email, display name and role, for the SPA.
+"""``GET /api/me``: the caller's email and display name, for the SPA's header.
 
-The SPA hides admin-only UI from this answer; the API's own guards
-(``require_role``) are what actually enforce it.
+Roles were removed with the template's admin module — Pace is one founder looking at
+their own business, so there is nobody to be an admin over.
 """
 
 from fastapi import APIRouter, Depends
 
-from app.core.roles import CurrentRole
 from app.core.security import CurrentUser, get_current_user, principal_email, principal_identity
 from app.schemas.me import MeRead
 
@@ -15,6 +14,6 @@ router = APIRouter(prefix="/me", tags=["me"], dependencies=[Depends(get_current_
 
 
 @router.get("", response_model=MeRead)
-async def read_me(user: CurrentUser, role: CurrentRole) -> MeRead:
+async def read_me(user: CurrentUser) -> MeRead:
     _, name = principal_identity(user)
-    return MeRead(email=principal_email(user), name=name, role=role)  # type: ignore[arg-type]
+    return MeRead(email=principal_email(user), name=name)

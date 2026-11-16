@@ -1,0 +1,336 @@
+{
+  "_note": "Never mutated. Offsets (due_in_days, last_touched_days_ago, goal_in_days) are resolved against the real current date by store.reset().",
+  "time_mode": "simulated",
+  "goal_in_days": 35,
+  "founder": {
+    "name": "Maya",
+    "business": "Kiln & Co",
+    "goal": "Launch the online store with the first collection before the holiday market",
+    "weekly_hours": 30
+  },
+  "people": [
+    {
+      "id": "p1",
+      "name": "Maya",
+      "role": "founder",
+      "capacity_hrs_week": 30
+    },
+    {
+      "id": "p2",
+      "name": "Leo",
+      "role": "part_time",
+      "capacity_hrs_week": 10
+    },
+    {
+      "id": "p3",
+      "name": "Sam",
+      "role": "contractor",
+      "capacity_hrs_week": 8
+    }
+  ],
+  "projects": [
+    {
+      "id": "pr1",
+      "name": "Store launch",
+      "status": "active",
+      "due_in_days": 10,
+      "why_it_matters": "No store means no holiday sales. Everything else waits on this."
+    },
+    {
+      "id": "pr2",
+      "name": "First production batch",
+      "status": "active",
+      "due_in_days": 21,
+      "why_it_matters": "Nothing to sell without stock, and the kiln schedule can't be rushed."
+    },
+    {
+      "id": "pr3",
+      "name": "Holiday market prep",
+      "status": "active",
+      "due_in_days": 35,
+      "why_it_matters": "The market is the one day with guaranteed foot traffic."
+    },
+    {
+      "id": "pr4",
+      "name": "Wholesale pitch to 3 local shops",
+      "status": "on_hold",
+      "due_in_days": 60,
+      "why_it_matters": "Recurring revenue later, but not before launch."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "project_id": "pr1",
+      "title": "Build product pages",
+      "assignee_id": "p3",
+      "status": "doing",
+      "priority": "high",
+      "due_in_days": 7,
+      "estimate_hrs": 10,
+      "waiting_on": "p1",
+      "notes": "Scaffolded. Can't finish without the product copy for the 12 SKUs.",
+      "last_touched_days_ago": 2
+    },
+    {
+      "id": "t2",
+      "project_id": "pr1",
+      "title": "Set up checkout + payments",
+      "assignee_id": "p3",
+      "status": "todo",
+      "priority": "high",
+      "due_in_days": 9,
+      "estimate_hrs": 8,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 3
+    },
+    {
+      "id": "t3",
+      "project_id": "pr1",
+      "title": "Product photos",
+      "assignee_id": "p2",
+      "status": "doing",
+      "priority": "high",
+      "due_in_days": 4,
+      "estimate_hrs": 6,
+      "waiting_on": "p1",
+      "notes": "Shot 12 pieces. Waiting on Maya to pick the finals.",
+      "last_touched_days_ago": 4
+    },
+    {
+      "id": "t4",
+      "project_id": "pr1",
+      "title": "Write product copy for 12 SKUs",
+      "assignee_id": "p1",
+      "status": "doing",
+      "priority": "high",
+      "due_in_days": -2,
+      "estimate_hrs": 8,
+      "waiting_on": null,
+      "notes": "Got through 3 of 12.",
+      "last_touched_days_ago": 11
+    },
+    {
+      "id": "t5",
+      "project_id": "pr1",
+      "title": "Approve photo selects",
+      "assignee_id": "p1",
+      "status": "todo",
+      "priority": "high",
+      "due_in_days": -1,
+      "estimate_hrs": 1,
+      "waiting_on": null,
+      "notes": "Leo sent a contact sheet of 12.",
+      "last_touched_days_ago": 9
+    },
+    {
+      "id": "t6",
+      "project_id": "pr1",
+      "title": "Shipping rates + policies",
+      "assignee_id": "p1",
+      "status": "todo",
+      "priority": "med",
+      "due_in_days": 8,
+      "estimate_hrs": 4,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 6
+    },
+    {
+      "id": "t7",
+      "project_id": "pr1",
+      "title": "Domain + email setup",
+      "assignee_id": "p3",
+      "status": "todo",
+      "priority": "low",
+      "due_in_days": 6,
+      "estimate_hrs": 2,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 7
+    },
+    {
+      "id": "t8",
+      "project_id": "pr1",
+      "title": "Homepage design",
+      "assignee_id": "p2",
+      "status": "doing",
+      "priority": "med",
+      "due_in_days": 5,
+      "estimate_hrs": 8,
+      "waiting_on": "p1",
+      "notes": "Needs Maya's brand direction before the final pass.",
+      "last_touched_days_ago": 5
+    },
+    {
+      "id": "t9",
+      "project_id": "pr1",
+      "title": "Set up email list + welcome flow",
+      "assignee_id": "p1",
+      "status": "todo",
+      "priority": "med",
+      "due_in_days": 9,
+      "estimate_hrs": 5,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 12
+    },
+    {
+      "id": "t10",
+      "project_id": "pr2",
+      "title": "Glaze delivery",
+      "assignee_id": "p1",
+      "status": "blocked",
+      "priority": "high",
+      "due_in_days": 5,
+      "estimate_hrs": 1,
+      "waiting_on": null,
+      "notes": "Supplier pushed delivery twice; now says week of the 8th. No alternative glaze sourced.",
+      "last_touched_days_ago": 3
+    },
+    {
+      "id": "t11",
+      "project_id": "pr2",
+      "title": "Throw 40 mugs + 20 bowls",
+      "assignee_id": "p1",
+      "status": "doing",
+      "priority": "high",
+      "due_in_days": 10,
+      "estimate_hrs": 24,
+      "waiting_on": null,
+      "notes": "14 mugs thrown so far.",
+      "last_touched_days_ago": 10
+    },
+    {
+      "id": "t12",
+      "project_id": "pr2",
+      "title": "Bisque fire batch 1",
+      "assignee_id": "p1",
+      "status": "todo",
+      "priority": "med",
+      "due_in_days": 14,
+      "estimate_hrs": 8,
+      "waiting_on": null,
+      "notes": "Needs the throwing done and a week of drying first.",
+      "last_touched_days_ago": 10
+    },
+    {
+      "id": "t13",
+      "project_id": "pr2",
+      "title": "Glaze + final fire",
+      "assignee_id": "p1",
+      "status": "todo",
+      "priority": "high",
+      "due_in_days": 18,
+      "estimate_hrs": 12,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 10
+    },
+    {
+      "id": "t14",
+      "project_id": "pr2",
+      "title": "Quality check + seconds sort",
+      "assignee_id": "p1",
+      "status": "todo",
+      "priority": "low",
+      "due_in_days": 20,
+      "estimate_hrs": 4,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 10
+    },
+    {
+      "id": "t15",
+      "project_id": "pr3",
+      "title": "Book market stall",
+      "assignee_id": "p1",
+      "status": "done",
+      "priority": "high",
+      "due_in_days": -10,
+      "estimate_hrs": 1,
+      "waiting_on": null,
+      "notes": "Paid, confirmed. Stall 14.",
+      "last_touched_days_ago": 10
+    },
+    {
+      "id": "t16",
+      "project_id": "pr3",
+      "title": "Product photos",
+      "assignee_id": "p2",
+      "status": "todo",
+      "priority": "low",
+      "due_in_days": 25,
+      "estimate_hrs": 4,
+      "waiting_on": null,
+      "notes": "Lifestyle shots for the stall banner, not the store.",
+      "last_touched_days_ago": 8
+    },
+    {
+      "id": "t17",
+      "project_id": "pr3",
+      "title": "Price tags + signage",
+      "assignee_id": "p2",
+      "status": "todo",
+      "priority": "med",
+      "due_in_days": 28,
+      "estimate_hrs": 3,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 8
+    },
+    {
+      "id": "t18",
+      "project_id": "pr3",
+      "title": "Pack + transport plan",
+      "assignee_id": "p1",
+      "status": "todo",
+      "priority": "low",
+      "due_in_days": 32,
+      "estimate_hrs": 2,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 8
+    },
+    {
+      "id": "t19",
+      "project_id": "pr3",
+      "title": "Float + card reader",
+      "assignee_id": "p1",
+      "status": "todo",
+      "priority": "med",
+      "due_in_days": 30,
+      "estimate_hrs": 1,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 8
+    },
+    {
+      "id": "t20",
+      "project_id": "pr4",
+      "title": "Build line sheet",
+      "assignee_id": "p2",
+      "status": "todo",
+      "priority": "low",
+      "due_in_days": 50,
+      "estimate_hrs": 4,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 22
+    },
+    {
+      "id": "t21",
+      "project_id": "pr4",
+      "title": "Email 3 shop buyers",
+      "assignee_id": "p1",
+      "status": "todo",
+      "priority": "low",
+      "due_in_days": 55,
+      "estimate_hrs": 2,
+      "waiting_on": null,
+      "notes": "",
+      "last_touched_days_ago": 22
+    }
+  ]
+}

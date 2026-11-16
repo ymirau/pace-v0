@@ -1,0 +1,11 @@
+# Vercel's Python runtime installs from this file at the repo root.
+# Mirrors backend/pyproject.toml's runtime deps, minus the ones a serverless
+# function doesn't need: uvicorn (Vercel supplies the server), aioodbc (the
+# SQL Server source was deleted) and python-multipart (no file uploads).
+fastapi>=0.136.1
+anthropic>=2.8.0
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30.0
+pydantic-settings>=2.7.0
+pyjwt[crypto]>=2.9.0
+httpx>=0.28.1

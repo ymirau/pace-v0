@@ -1,114 +1,23 @@
 {
-  "_how_to_use": [
-    "Your own business, so the magic-or-annoying question gets answered on work you",
-    "actually care about. Copy this file first:",
-    "    cp data/seed_blank.json data/seed_mine.json",
-    "fill in seed_mine.json, then run:  /reset mine",
-    "",
-    "Rules that matter:",
-    "  - ids must be unique and keep their prefixes: p1.. people, pr1.. projects, t1.. tasks",
-    "  - every task's project_id and assignee_id must match an id above it",
-    "  - due_in_days / last_touched_days_ago are DAYS FROM TODAY, resolved on reset.",
-    "    Negative due_in_days = already overdue. last_touched_days_ago = 9 means you",
-    "    last touched it 9 days ago.",
-    "  - estimate_hrs is your honest guess in hours. The agent plans against it, so a",
-    "    fantasy number gets you a fantasy plan.",
-    "  - waiting_on is the person id you're blocked on (often yourself). This plus",
-    "    last_touched is how the agent finds bottlenecks and stuck work.",
-    "  - 10-25 tasks is the sweet spot. Fewer and there's nothing to manage.",
-    "",
-    "seed_mine.json is gitignored \u2014 it holds your real business and real people's names."
-  ],
   "time_mode": "real",
-  "goal_in_days": 30,
+  "_how_to_use": [
+    "An empty business. Load it and the agent introduces itself and sets things up",
+    "by asking \u2014 nothing here is pre-filled.",
+    "",
+    "To skip the conversation and type it in yourself instead:",
+    "    cp seed_blank.json seed_mine.json",
+    "then fill in founder, people, projects and tasks, where due_in_days and",
+    "last_touched_days_ago are DAYS FROM TODAY (negative due_in_days = overdue).",
+    "seed_mine.json is gitignored: it holds a real business and real people's names."
+  ],
+  "goal_in_days": null,
   "founder": {
-    "name": "YOUR FIRST NAME",
-    "business": "YOUR BUSINESS NAME",
-    "goal": "the one outcome that matters in the next few weeks, in a short sentence",
-    "weekly_hours": 20
+    "name": "",
+    "business": "",
+    "goal": "",
+    "weekly_hours": 0
   },
-  "people": [
-    {
-      "id": "p1",
-      "name": "YOUR FIRST NAME",
-      "role": "founder",
-      "capacity_hrs_week": 20
-    },
-    {
-      "id": "p2",
-      "name": "someone who helps you",
-      "role": "contractor",
-      "capacity_hrs_week": 8
-    }
-  ],
-  "projects": [
-    {
-      "id": "pr1",
-      "name": "a real project",
-      "status": "active",
-      "due_in_days": 14,
-      "why_it_matters": "one line on what breaks if this slips"
-    },
-    {
-      "id": "pr2",
-      "name": "another real project",
-      "status": "active",
-      "due_in_days": 30,
-      "why_it_matters": ""
-    }
-  ],
-  "tasks": [
-    {
-      "id": "t1",
-      "project_id": "pr1",
-      "title": "a task you have actually been avoiding",
-      "assignee_id": "p1",
-      "status": "doing",
-      "priority": "high",
-      "due_in_days": -2,
-      "estimate_hrs": 4,
-      "waiting_on": null,
-      "notes": "",
-      "last_touched_days_ago": 9
-    },
-    {
-      "id": "t2",
-      "project_id": "pr1",
-      "title": "a task someone else is blocked on you for",
-      "assignee_id": "p2",
-      "status": "doing",
-      "priority": "high",
-      "due_in_days": 3,
-      "estimate_hrs": 6,
-      "waiting_on": "p1",
-      "notes": "what they need from you",
-      "last_touched_days_ago": 4
-    },
-    {
-      "id": "t3",
-      "project_id": "pr2",
-      "title": "a task that is genuinely blocked on someone outside",
-      "assignee_id": "p1",
-      "status": "blocked",
-      "priority": "med",
-      "due_in_days": 7,
-      "estimate_hrs": 2,
-      "waiting_on": null,
-      "notes": "who or what you're waiting on, and since when",
-      "last_touched_days_ago": 5
-    },
-    {
-      "id": "t4",
-      "project_id": "pr2",
-      "title": "an ordinary next task",
-      "assignee_id": "p1",
-      "status": "todo",
-      "priority": "med",
-      "due_in_days": 10,
-      "estimate_hrs": 3,
-      "waiting_on": null,
-      "notes": "",
-      "last_touched_days_ago": 1
-    }
-  ]
+  "people": [],
+  "projects": [],
+  "tasks": []
 }

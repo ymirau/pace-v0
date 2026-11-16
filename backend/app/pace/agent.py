@@ -6,6 +6,9 @@ Three things about claude-sonnet-5-5 shape this file:
   - stop_reason can be "refusal", so it is checked before content is read. The
     server-side fallback is on so a classifier false positive doesn't kill a run.
   - No temperature and no budget_tokens (both rejected). Depth is set with effort.
+    Measured on the opening check-in: medium 7.9s, low 4.7s, and low with thinking
+    off (between_tools) 13.2s AND it applied a proposal without asking. So: low
+    effort, thinking left on.
 """
 
 import os
@@ -56,13 +59,21 @@ class Agent:
         self.tool_calls = 0
 
     def system(self):
+        """Fill the prompt from the state. A blank field becomes an explicit "not told
+        yet" rather than an empty string, so the model never greets a nameless founder
+        or reads "goal: " as a goal."""
         f = self.state["founder"]
+
+        def known(key, empty="(not told yet)"):
+            v = f.get(key)
+            return v if v not in (None, "", 0) else empty
+
         return self.prompt_file.read_text().format(
-            founder=f["name"],
-            business=f["business"],
-            goal=f["goal"],
-            goal_date=f["goal_date"],
-            weekly_hours=f["weekly_hours"],
+            founder=known("name"),
+            business=known("business"),
+            goal=known("goal"),
+            goal_date=known("goal_date", "(no date set)"),
+            weekly_hours=known("weekly_hours"),
             today=self.state["clock"]["today"],
         )
 
@@ -74,7 +85,7 @@ class Agent:
             system=self.system(),
             messages=self.messages,
             tools=tools.SCHEMAS,
-            output_config={"effort": "medium"},
+            output_config={"effort": "low"},
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
         )

@@ -31,6 +31,61 @@ CHANGE = {
 
 SCHEMAS = [
     {
+        "name": "set_business",
+        "description": (
+            "Record who the founder is and what they're working towards. Use this while "
+            "setting someone up for the first time, or when they tell you something has "
+            "changed. Set only the fields you actually learned."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "The founder's first name"},
+                "business": {"type": "string", "description": "What they call the business"},
+                "goal": {
+                    "type": "string",
+                    "description": "The one outcome that matters, in a short sentence",
+                },
+                "goal_date": {
+                    "type": ["string", "null"],
+                    "description": "YYYY-MM-DD, if they named one",
+                },
+                "weekly_hours": {"type": "number", "description": "Hours a week they have for it"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "add_people",
+        "description": (
+            "Add the founder or anyone who works with them. Add the founder first, with "
+            "role 'founder'. Returns the ids to use as assignee_id."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "people": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "role": {
+                                "type": "string",
+                                "enum": ["founder", "contractor", "part_time"],
+                            },
+                            "capacity_hrs_week": {"type": "number"},
+                        },
+                        "required": ["name", "role"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["people"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "get_overview",
         "description": (
             "The manager's snapshot: progress against the goal date, overdue work, stale "
@@ -248,6 +303,24 @@ def _resolve_person(state, ref):
 
 def get_overview(state, **_):
     f = state["founder"]
+    if not state["projects"] and not state["tasks"]:
+        known = [
+            f"name: {f['name']}" if f.get("name") else None,
+            f"business: {f['business']}" if f.get("business") else None,
+            f"goal: {f['goal']}" if f.get("goal") else None,
+            f"goal date: {f['goal_date']}" if f.get("goal_date") else None,
+            f"hours a week: {f['weekly_hours']}" if f.get("weekly_hours") else None,
+            f"people: {', '.join(p['name'] for p in state['people'])}" if state["people"] else None,
+        ]
+        known = [k for k in known if k]
+        return (
+            f"Nothing is set up yet. Today is {state['clock']['today']}.\n"
+            + ("Known so far — " + "; ".join(known) + "\n" if known else "Nothing known yet.\n")
+            + "This is a first conversation: introduce yourself in one line and ask what "
+            "they're working on. Don't bring a plan or a proposal — there's nothing to "
+            "plan yet. As they tell you things, record them with set_business, add_people "
+            "and create_tasks."
+        )
     out = [
         f"{f['business']} — today is {state['clock']['today']}.",
         f"Goal: {f['goal']} by {f['goal_date']} "
@@ -535,7 +608,42 @@ def update_tasks(state, updates=None, session=None, **_):
     return "\n".join(f"  - {o}" for o in out) or "Nothing to update."
 
 
+def set_business(state, session=None, **fields):
+    f = state["founder"]
+    changed = []
+    for k in ("name", "business", "goal", "goal_date", "weekly_hours"):
+        if k in fields and fields[k] not in (None, "") and fields[k] != f.get(k):
+            changed.append(f"{k}: {fields[k]}")
+            f[k] = fields[k]
+    if not changed:
+        return "Nothing new to record."
+    store.log_change(state, session, "set_business", "; ".join(changed))
+    return "Recorded: " + "; ".join(changed)
+
+
+def add_people(state, people=None, session=None, **_):
+    added = []
+    for p in people or []:
+        if any(q["name"].lower() == p["name"].lower() for q in state["people"]):
+            added.append(f"= {p['name']} already here")
+            continue
+        person = {
+            "id": store.next_id(state["people"], "p"),
+            "name": p["name"],
+            "role": p["role"],
+            "capacity_hrs_week": p.get("capacity_hrs_week", 0),
+        }
+        state["people"].append(person)
+        added.append(
+            f"{person['id']} {person['name']} ({person['role']}, {person['capacity_hrs_week']}h/wk)"
+        )
+    store.log_change(state, session, "add_people", "; ".join(added))
+    return "\n".join(f"  - {a}" for a in added)
+
+
 REGISTRY = {
+    "set_business": set_business,
+    "add_people": add_people,
     "get_overview": get_overview,
     "find_tasks": find_tasks,
     "check_timeline": check_timeline,

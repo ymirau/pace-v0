@@ -71,7 +71,6 @@ a DBA/owner step). Then, as the app role:
 
 ```bash
 uv run python -m scripts.postgres.setup_db   # verify the DB is ready (does NOT create anything)
-uv run python -m scripts.postgres.seed       # seed example rows (idempotent; delete seed.py if the app has nothing to seed)
 uv run uvicorn main:app --reload --port 8000
 ```
 
@@ -123,7 +122,6 @@ Once that's done, verify from the app side and seed (as the app role):
 
 ```bash
 uv run python -m scripts.postgres.setup_db   # readiness check: schema + tables exist, app role has SELECT + CRUD
-uv run python -m scripts.postgres.seed       # seed example rows
 ```
 
 `setup_db.py` creates nothing — it connects as `POSTGRES_URL` and fails with

@@ -33,3 +33,8 @@ _workitems/
 .githooks/
 .vscode/
 .gitlab-ci.yml
+
+# Local `vercel build` byproducts — never part of an upload.
+.vercel_python_packages/
+/pyproject.toml
+/uv.lock

@@ -91,3 +91,10 @@ backend/app/pace/data/seed_mine.json
 backend/app/pace/transcripts/
 .vercel
 .env*
+
+# Byproducts of `vercel build` run at the repo root: a pyproject.toml and lock
+# synthesised from requirements.txt, and the wheels it installs (~55 MB). All
+# regenerated on demand; none of them describe this repo.
+/.vercel_python_packages/
+/pyproject.toml
+/uv.lock

@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "charliermarsh.ruff",
+    "ms-python.python",
+    "anthropic.claude-code",
+    "gitlab.gitlab-workflow",
+    "ms-vscode-remote.remote-ssh",
+    "ritwickdey.LiveServer",
+    "redhat.vscode-yaml",
+    "ms-vscode-remote.remote-wsl"
+  ]
+}

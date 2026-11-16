@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# pre-commit — block ordinary commits on the protected branches.
+#
+# main, uat and develop only ever receive merges: work is committed on a
+# feature/*, fix/* or chore/* branch and merged up (/syn-promote-feature), and
+# the workflow skills land _workitems/ changes through a chore branch and a
+# fast-forward. A commit made while one of them is checked out is a mistake,
+# so it's stopped here, before it exists.
+#
+# Allowed through:
+#   - finishing a merge (MERGE_HEAD exists: committing after resolving conflicts)
+#   - the root commit of a new repo (no HEAD yet)
+#   - any other branch, or a detached HEAD
+# Merges that don't conflict and fast-forwards never run this hook at all.
+#
+# Protected branches: git config branchguard.protected (space-separated),
+# default "main uat develop". Emergency escape: git commit --no-verify.
+
+git rev-parse -q --verify HEAD >/dev/null || exit 0
+git rev-parse -q --verify MERGE_HEAD >/dev/null && exit 0
+
+branch=$(git symbolic-ref --short -q HEAD) || exit 0
+protected=$(git config --get branchguard.protected || echo "main uat develop")
+
+for p in $protected; do
+  [ "$branch" = "$p" ] || continue
+  cat >&2 <<EOF
+Direct commits on $branch are blocked: $branch only receives merges.
+Branch first (your staged and unstaged changes come with you):
+  git switch -c feature/<name>
+then commit there, and merge it up (/syn-promote-feature for an app).
+Emergency only: git commit --no-verify
+EOF
+  exit 1
+done
+exit 0

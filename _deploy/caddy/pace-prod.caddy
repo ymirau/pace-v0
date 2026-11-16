@@ -1,0 +1,29 @@
+# pace PROD route fragment.
+# Installed by _deploy/scripts/install.sh prod → /etc/caddy/app-routes/pace-prod.caddy,
+# imported into the apps.example.com site block via `import /etc/caddy/app-routes/*.caddy`.
+#
+# prod's URL base is /pace/ (segment `pace`), so the dist is at
+# /var/www/html/pace/.
+#
+#   /pace        → redirect to /pace/ (canonical base)
+#   /pace/api/*  → strip the prefix → FastAPI /api/* → uvicorn :8012
+#   /pace/*      → SPA from /var/www/html/pace/
+#
+# The bare (no-slash) redirect gives the app a canonical base URL. Login returns
+# via the shared /auth-callback/, not here (see the template's authConfig.ts);
+# but without this redirect a visit to the bare path falls through to an empty 200
+# and the SPA renders blank, so keep it. Target is RELATIVE so the internal App
+# Proxy host (app-server-02) never leaks into Location; matcher is namespaced for
+# the shared site block. See pace-sbx.caddy for the full why.
+# `path /pace` matches only the bare path, not `/pace-uat`/`-sbx`.
+@pace_prod_noslash path /pace
+redir @pace_prod_noslash /pace/ permanent
+handle /pace/api/* {
+	uri strip_prefix /pace
+	reverse_proxy localhost:8012
+}
+handle /pace/* {
+	root * /var/www/html
+	try_files {path} /pace/index.html
+	file_server
+}

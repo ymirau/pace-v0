@@ -1,0 +1,176 @@
+# CI/CD for the pace-v0 monorepo (backend/ + frontend/).
+#
+# Pipeline: lint -> test -> build -> deploy-sbx -> deploy-uat -> deploy-prod.
+#
+# Deploy flow:
+#   - SBX:  auto-deploys on push to `develop`.
+#   - UAT:  auto-deploys on push to `uat`; manual button on `main` (hotfix valve).
+#   - PROD: manual button, available on `main` only.
+#
+# Runner tags (the synveon group runners on ai-server-01 do NOT run untagged
+# jobs, so every job sets one):
+#   docker — lint/test/build (container executor; jobs bring their own image)
+#   shell  — deploy (shell executor; MUST have node, npm, uv, rsync, ssh on PATH,
+#            because _deploy/scripts/deploy.sh builds the SPA on the runner before shipping)
+#
+# Required CI/CD variables (Settings -> CI/CD -> Variables):
+#   SSH_KEY_SBX      — base64 of the SBX deploy key  (masked) — authorizes synappssbx-pace
+#   SSH_KEY_UAT      — base64 of the UAT deploy key  (masked + protected) — authorizes synapps-pace
+#   SSH_KEY_PROD     — base64 of the PROD deploy key (masked + protected) — authorizes synapps-pace
+#   SSH_KNOWN_HOSTS  — `ssh-keyscan -H ai-server-01 app-server-02` (group-level var)
+# See _deploy/gitlab-setup.md for the full provisioning + rotation runbook.
+stages:
+  - lint
+  - test
+  - build
+  - deploy-sbx
+  - deploy-uat
+  - deploy-prod
+
+# ----------------------------------------------------------------------------
+# Backend (FastAPI / UV / Python 3.12)
+# ----------------------------------------------------------------------------
+.backend:
+  image: python:3.12-slim
+  tags: [docker]
+  before_script:
+    - pip install --quiet uv
+    - cd backend
+    - uv sync --frozen
+  rules:
+    - changes:
+        - backend/**/*
+
+backend-lint:
+  extends: .backend
+  stage: lint
+  script:
+    - uv run ruff check .
+    - uv run ruff format --check .
+
+backend-test:
+  extends: .backend
+  stage: test
+  # Tests run against a throwaway Postgres service that lives only for this job.
+  # The credentials below are NOT secrets — they belong to a disposable
+  # container destroyed when the job ends — so no real DB creds are ever stored
+  # in GitLab CI/CD variables. Real creds live only in the host .env at runtime
+  # (see _deploy/README.md).
+  services:
+    - name: postgres:16
+      alias: postgres
+  variables:
+    POSTGRES_DB: pace_test
+    POSTGRES_USER: pace
+    POSTGRES_PASSWORD: pace
+    # Host is the service alias `postgres`. This disposable `pace` user OWNS the
+    # DB, so the DDL is applied directly below; setup_db only *verifies* readiness.
+    POSTGRES_URL: "postgresql+asyncpg://pace:pace@postgres:5432/pace_test"
+  script:
+    # Wait for the Postgres service to accept connections before setup.
+    - until python -c "import socket; socket.create_connection(('postgres', 5432), 2)" 2>/dev/null; do echo "waiting for postgres..."; sleep 1; done
+    # Apply the schema + table DDL as the owner (here the test user IS the owner;
+    # a real deploy has a DBA do this — see _deploy/README.md). 999_grants.sql is
+    # skipped: the test user is also the app user, so it already has full access.
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends postgresql-client
+    - PGPASSWORD=pace psql -h postgres -U pace -d pace_test -f sql/postgres/001_schema.sql -f sql/postgres/002_items.sql -f sql/postgres/003_support_requests.sql -f sql/postgres/004_user_roles.sql
+    - uv run python -m scripts.postgres.setup_db   # readiness check (owner sees full access)
+    - uv run pytest -q
+
+# ----------------------------------------------------------------------------
+# Frontend (Vite / React 19 / Node)
+# ----------------------------------------------------------------------------
+.frontend:
+  image: node:22-alpine
+  tags: [docker]
+  before_script:
+    - cd frontend
+    - npm ci
+  rules:
+    - changes:
+        - frontend/**/*
+
+frontend-lint:
+  extends: .frontend
+  stage: lint
+  script:
+    - npm run lint
+
+frontend-build:
+  extends: .frontend
+  stage: build
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/dist
+    expire_in: 1 week
+
+# ----------------------------------------------------------------------------
+# Deploy (shell runner, delegates to _deploy/scripts/deploy.sh <env>)
+#
+# _deploy/scripts/deploy.sh reads _deploy/envs/pace-<env>.env for SERVICE_USER,
+# TARGET_HOST, INSTALL_ROOT, ports, etc. — no host/user/path duplication between
+# CI and the on-host install. It builds the SPA locally, SSHes to the target,
+# `git reset`s the on-host checkout to the env's branch, rsyncs dist/, and
+# `sudo systemctl restart pace-api@<env>`. Deploys do NOT touch the database;
+# schema setup is a one-time manual step per env (see _deploy/README.md).
+#
+# Toolchain follow-up: to avoid requiring node/uv on the shell runner, split the
+# build into a docker `build-<env>` artifact job and add a "use prebuilt dist"
+# path to _deploy/scripts/deploy.sh (see _deploy/gitlab-setup.md). First cut deploys directly.
+# ----------------------------------------------------------------------------
+.deploy:
+  tags: [shell]
+  before_script:
+    - eval "$(ssh-agent -s)"
+    # Stash the agent PID so after_script can kill it. after_script runs in a fresh
+    # shell that does NOT inherit SSH_AGENT_PID, and on the shell executor an unkilled
+    # agent leaks a process on the host per deploy. $CI_PROJECT_DIR is unique per
+    # concurrent job, so this file can't be clobbered by a parallel sbx/uat deploy.
+    - echo "$SSH_AGENT_PID" > "$CI_PROJECT_DIR/.ssh_agent_pid"
+    - install -m 0700 -d ~/.ssh
+    - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 0600 ~/.ssh/known_hosts
+    - echo "$SSH_KEY" | base64 -d | ssh-add -
+  script:
+    - ./_deploy/scripts/deploy.sh "$ENV"
+  after_script:
+    # Kill the agent (reaped even on job failure/cancel); ssh-add -D alone leaves the
+    # daemon running. Guarded so a missing PID file is harmless.
+    - kill "$(cat "$CI_PROJECT_DIR/.ssh_agent_pid" 2>/dev/null)" 2>/dev/null || true
+    - rm -f "$CI_PROJECT_DIR/.ssh_agent_pid"
+
+deploy-sbx:
+  extends: .deploy
+  stage: deploy-sbx
+  resource_group: deploy_sbx       # serialize SBX so two pushes don't race
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+  variables:
+    ENV: sbx
+    SSH_KEY: $SSH_KEY_SBX
+
+deploy-uat:
+  extends: .deploy
+  stage: deploy-uat
+  resource_group: deploy_uat
+  rules:
+    # Auto-deploy on pushes to `uat` (mirrors how SBX auto-deploys from develop).
+    - if: $CI_COMMIT_BRANCH == "uat"
+    # On `main`, UAT remains a manual button (hotfix safety valve).
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  variables:
+    ENV: uat
+    SSH_KEY: $SSH_KEY_UAT
+
+deploy-prod:
+  extends: .deploy
+  stage: deploy-prod
+  resource_group: deploy_prod
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  variables:
+    ENV: prod
+    SSH_KEY: $SSH_KEY_PROD

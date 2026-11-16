@@ -1,0 +1,25 @@
+# pace UAT route fragment.
+# Installed by _deploy/scripts/install.sh uat → /etc/caddy/app-routes/pace-uat.caddy,
+# imported into the apps.example.com site block via `import /etc/caddy/app-routes/*.caddy`.
+#
+#   /pace-uat        → redirect to /pace-uat/ (canonical base)
+#   /pace-uat/api/*  → strip the prefix → FastAPI /api/* → uvicorn :8013
+#   /pace-uat/*      → SPA from /var/www/html/pace-uat/
+#
+# The bare (no-slash) redirect gives the app a canonical base URL. Login returns
+# via the shared /auth-callback/, not here (see the template's authConfig.ts);
+# but without this redirect a visit to the bare path falls through to an empty 200
+# and the SPA renders blank, so keep it. Target is RELATIVE so the internal App
+# Proxy host (app-server-02) never leaks into Location; matcher is namespaced for
+# the shared site block. See pace-sbx.caddy for the full why.
+@pace_uat_noslash path /pace-uat
+redir @pace_uat_noslash /pace-uat/ permanent
+handle /pace-uat/api/* {
+	uri strip_prefix /pace-uat
+	reverse_proxy localhost:8013
+}
+handle /pace-uat/* {
+	root * /var/www/html
+	try_files {path} /pace-uat/index.html
+	file_server
+}

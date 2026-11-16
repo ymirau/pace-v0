@@ -1,0 +1,48 @@
+# Templated systemd unit for the pace-v0 API.
+#   instance = env short name → pace-api@sbx, @uat, @prod
+#
+# Installed by _deploy/scripts/install.sh <env> (which also writes the per-env
+# User= drop-in below). Manual equivalent, if ever needed:
+#   sudo cp _deploy/systemd/pace-api@.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now pace-api@sbx
+#
+# %i expands to the instance (e.g. "sbx"), so this one file serves all envs.
+#
+# Two service users: the base User= below (synapps-pace) serves uat + prod
+# (which share prod-grade secrets); SBX is isolated under synappssbx-pace via
+# a drop-in installed alongside this unit:
+#   sudo install -d /etc/systemd/system/pace-api@sbx.service.d
+#   printf '[Service]\nUser=synappssbx-pace\n' | \
+#     sudo tee /etc/systemd/system/pace-api@sbx.service.d/user.conf
+#   sudo systemctl daemon-reload
+# (User= cannot read EnvironmentFile, so it can't be templated from the env file —
+# a per-instance drop-in is the way to vary it.)
+[Unit]
+Description=pace-v0 API (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=synapps-pace
+WorkingDirectory=/opt/synveon/pace-%i/backend
+
+# 1) Settings (committed, non-secret) — API_PORT, CORS_ALLOW_ORIGINS, source coordinates.
+EnvironmentFile=/opt/synveon/pace-%i/_deploy/envs/pace-%i.env
+# 2) Secrets — POSTGRES_URL and any optional source password/keys. Loaded second,
+#    so a key set in both files takes this one's value.
+#    Mode 0640, NEVER committed; group = the env's service user
+#    (root:synappssbx-pace for sbx, root:synapps-pace for uat/prod).
+#    See _deploy/envs/pace.secrets.env.example.
+EnvironmentFile=/etc/pace-%i.env
+
+# Run the venv's uvicorn directly (created by `uv sync` during deploy). Bind to
+# loopback only — Caddy is the sole front door.
+ExecStart=/opt/synveon/pace-%i/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port ${API_PORT}
+
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,36 @@
+# pace SBX route fragment.
+# Installed by _deploy/scripts/install.sh sbx → /etc/caddy/app-routes/pace-sbx.caddy,
+# which the apps.example.com site block picks up via `import /etc/caddy/app-routes/*.caddy`.
+# Raw `handle` directives only (imported INSIDE the site block — not a site block itself).
+#
+#   /pace-sbx        → redirect to /pace-sbx/ (canonical base)
+#   /pace-sbx/api/*  → strip the prefix so FastAPI sees /api/*  → uvicorn :8014
+#   /pace-sbx/*      → serve the SPA from /var/www/html/pace-sbx/
+#                            (root is the parent /var/www/html; try_files adds the segment)
+#
+# The bare (no-slash) redirect gives the app a canonical base URL. (Login no
+# longer returns here: MSAL redirects to the shared /auth-callback/, which
+# bounces the browser back to the app URL — see the template's authConfig.ts.)
+# Without this redirect, a visit to the bare path matches neither handle below,
+# falls through to an empty 200, and the SPA renders blank — so keep it.
+#
+# The target is a RELATIVE path on purpose. Caddy writes the redir target
+# verbatim into the Location header; an absolute target would embed the request
+# Host, which behind Azure App Proxy is the internal name app-server-02.example.com
+# (App Proxy's Internal URL) — leaking it to external clients. A relative target
+# resolves against apps.example.com in the browser's address bar. operator-app
+# hit this exact trap; see platform _deploy/rendered/prod/prod.caddy.
+#
+# Matcher name is namespaced (pace_*) because this fragment is imported
+# into the same apps.example.com site block as operator-app's route files.
+@pace_sbx_noslash path /pace-sbx
+redir @pace_sbx_noslash /pace-sbx/ permanent
+handle /pace-sbx/api/* {
+	uri strip_prefix /pace-sbx
+	reverse_proxy localhost:8014
+}
+handle /pace-sbx/* {
+	root * /var/www/html
+	try_files {path} /pace-sbx/index.html
+	file_server
+}

@@ -1,0 +1,192 @@
+@import "tailwindcss";
+
+/*
+ * Enable a class/attribute-driven dark variant. `dark:` utilities apply when the
+ * element (or an ancestor) carries data-theme="dark" — set on <html> by the
+ * theme module (see src/theme.ts) / the no-FOUC bootstrap in index.html.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Synveon apps-UI design tokens. We remap Tailwind's slate ramp + accent colors to
+ * Synveon's warm-gray house palette so the existing utility classes (bg-slate-50,
+ * text-slate-600, etc.) render the house style without rewriting every page.
+ * This @theme block is the single source of truth for palette/font/radius —
+ * prefer the remapped slate/accent utilities over introducing new colors.
+ *
+ * Dark mode: the [data-theme="dark"] block below only *overrides* these vars
+ * (warm-charcoal ramp + inverted text + dark-tuned accents). Because Tailwind
+ * v4 utilities resolve `var(--color-*)` at use-time, the existing slate/accent
+ * classes flip automatically — do NOT change the light values here.
+ */
+@theme {
+  /* System font stack. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Warm grayscale (replaces the cool slate ramp) */
+  --color-slate-50: #f5f5f3; /* canvas / hover fills / table head */
+  --color-slate-100: #f0f0ed; /* hairline dividers, chips */
+  --color-slate-200: #e8e8e5; /* card & table borders */
+  --color-slate-300: #e0e0dc; /* input borders */
+  /* 400-600 are text colours as well as borders/icons, so each clears WCAG AA
+   * (4.5:1) on the surface, the canvas and the sidebar.
+   * Mirrored in src/contrast.test.ts: change one, change the other. */
+  --color-slate-400: #6a6a6a; /* faint / empty text (AA) */
+  --color-slate-500: #5e5e5e; /* muted labels (AA) */
+  --color-slate-600: #555555; /* secondary text */
+  --color-slate-700: #333333; /* primary-button hover */
+  --color-slate-800: #2a2a2a;
+  --color-slate-900: #1a1a1a; /* ink: headings, primary button, focus */
+
+  /* Accents — badge / status colors */
+  --color-blue-100: #e6f1fb; /* info badge bg / avatar bg */
+  --color-blue-700: #185fa5; /* info badge text */
+  --color-emerald-100: #eaf3de; /* ok badge bg */
+  --color-emerald-700: #3b6d11; /* ok badge text */
+  --color-amber-100: #faeeda; /* warning badge bg */
+  --color-amber-700: #854f0b; /* warning badge text */
+  --color-red-100: #fcebeb; /* danger badge bg */
+  --color-red-500: #e24b4a; /* danger progress fill */
+  --color-red-600: #a32d2d; /* danger text */
+  --color-red-700: #a32d2d;
+
+  /* Synveon logo leaf-green (the swoosh) — used to highlight non-zero counts. Bright
+   * enough to read on both the light canvas and the dark charcoal surface. */
+  --color-logo-green: #74c04f;
+
+  /* Semantic surface token for content: cards/panels/tables/inputs/buttons.
+   * In light it is a soft warm grey, a step below the #f5f5f3 canvas; in dark a raised charcoal (see the dark block). Exposed as
+   * the `surface` color, so `bg-surface` / `text-surface` work. Modals sit on
+   * the canvas (bg-slate-50) so their inputs and buttons stand out. */
+  --color-surface: #ececE9;
+  /* The sidebar nav's own background: white in light, as it was, rather than
+   * following the content surface; darker than the page in dark. `bg-sidebar`. */
+  --color-sidebar: #ffffff;
+  /* The dimming overlay behind every modal (Modal.tsx): 70% black, so a launched
+   * form clearly takes the foreground. Darker in dark mode (see the dark block),
+   * where the same overlay barely changes an already-dark page. `bg-backdrop`. */
+  --color-backdrop: rgb(0 0 0 / 0.7);
+
+  /* MetricTile background tones (neutral gray + budget green/amber/red). The
+   * dark block below re-tunes the accents so tiles read on dark. Use
+   * `bg-tile-neutral|ok|warn|over`. */
+  --color-tile-neutral: var(--color-surface); /* flat on the page, like cards (both themes) */
+  --color-tile-ok: #eaf3de; /* matches the "OK" badge */
+  --color-tile-warn: #fbf4c9; /* "Near limit" (yellow) */
+  --color-tile-over: #fcebeb; /* "Over" */
+
+  /* Cards/tables use a 10px radius. */
+  --radius-lg: 0.625rem;
+}
+
+/*
+ * Dark theme — warm-charcoal overrides. Setting these custom properties on the
+ * <html data-theme="dark"> element re-defines the ramp for the whole subtree;
+ * every `bg-slate-*` / `text-slate-*` / accent utility inherits the new value.
+ * Surfaces sit ~#1c1b19–#2a2824 (warm charcoal, never pure black); the text end
+ * of the ramp is light so text stays legible on dark.
+ */
+[data-theme="dark"] {
+  /* Render native UI (form controls, spinners) in dark to match. */
+  color-scheme: dark;
+  /* Scrollbars a step darker than the default dark ones (thumb, track). */
+  scrollbar-color: #322f2a #1c1b19;
+
+  /* Warm grayscale, inverted: 50 = darkest canvas, 900 = lightest ink. */
+  --color-slate-50: #1c1b19; /* canvas / hover fills / table head */
+  --color-slate-100: #26241f; /* hairline dividers, chips */
+  --color-slate-200: #3a3631; /* card & table borders (a step above the surface) */
+  --color-slate-300: #46423b; /* input borders (a step above slate-200) */
+  --color-slate-400: #a19b91; /* faint / empty text (AA on surface/canvas) */
+  --color-slate-500: #aba59a; /* muted labels (AA) */
+  --color-slate-600: #b7b1a6; /* secondary text */
+  --color-slate-700: #d6d0c5; /* primary-button hover */
+  --color-slate-800: #e7e1d6;
+  --color-slate-900: #f3ede2; /* ink: headings, primary button, focus */
+
+  /* Raised charcoal surface, a step above the #1c1b19 canvas. */
+  --color-surface: #26241f;
+  /* The sidebar a step BELOW the #1c1b19 canvas, so the nav reads as its own band
+   * rather than blending with the raised content surface. */
+  --color-sidebar: #171614;
+  /* Modal overlay: darker than light mode's 70% so the dim still reads on dark. */
+  --color-backdrop: rgb(0 0 0 / 0.8);
+
+  /* Accents — dark-tuned: 100 becomes a deep tint (badge bg), 700 becomes a
+   * light saturated hue (badge text), so pills read on dark surfaces. */
+  --color-blue-100: #17293b; /* info badge bg / avatar bg */
+  --color-blue-700: #82b6e6; /* info badge text */
+  --color-emerald-100: #22301a; /* ok badge bg */
+  --color-emerald-700: #a0ce70; /* ok badge text */
+  --color-amber-100: #3a2d16; /* warning badge bg */
+  --color-amber-700: #e4b878; /* warning badge text */
+  --color-red-100: #3a1e1e; /* danger badge bg */
+  --color-red-500: #e24b4a; /* danger progress fill (kept vivid) */
+  --color-red-600: #e88c8c; /* danger text (errors, required markers) */
+  --color-red-700: #e88c8c; /* danger text */
+
+  /* Soft accent fills/borders used by the example UI (stale banner, selected
+   * row, secondary delete button). Tailwind's default -50/-200/-300/-800 shades
+   * are near-white and would leak light on dark, so re-tune them to deep tints
+   * (fills), mid borders, and light text that read on the dark surface. */
+  --color-blue-50: #1a2836; /* selected table-row highlight */
+  --color-amber-50: #2a2210; /* stale/warning banner bg */
+  --color-amber-200: #4d3c1a; /* stale/warning banner border */
+  --color-amber-800: #e8c07a; /* stale/warning banner text */
+  --color-red-50: #2e1919; /* delete-button hover fill (ItemsPage) */
+  --color-red-300: #5a3030; /* delete-button border (ItemsPage) */
+
+  /* MetricTile tones, dark-tuned to match the dark accent -100 tints. */
+  --color-tile-ok: #22301a; /* deep green (emerald-100 dark) */
+  --color-tile-warn: #3a2d16; /* deep amber (amber-100 dark) */
+  --color-tile-over: #3a1e1e; /* deep red (red-100 dark) */
+}
+
+/* WebKit fallback for browsers that ignore `scrollbar-color` (older Chromium/
+ * Safari): a darker thumb on the canvas-dark track, with padding so it reads
+ * as a slim rounded bar. */
+[data-theme="dark"] ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: #1c1b19;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background-color: #322f2a;
+  border-radius: 9999px;
+  border: 3px solid #1c1b19;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background-color: #3c3833;
+}
+
+/* Native <select> option popups don't reliably follow `color-scheme` once the
+ * control is custom-styled (Chromium/Windows renders them as light text on a
+ * white popup). Pin the option colors to the dark surface so the list stays
+ * legible; applies to every native select in the app. */
+[data-theme="dark"] option {
+  background-color: var(--color-surface);
+  color: var(--color-slate-900);
+}
+
+@layer base {
+  /* Light default; the unlayered [data-theme="dark"] rule above overrides it. */
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--color-slate-50);
+    color: var(--color-slate-900);
+    font-size: 14px;
+  }
+
+  /* Form-control affordance: no default outline; border darkens on focus. */
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    border-color: var(--color-slate-500);
+  }
+}

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# pre-push — two jobs, run before each push:
+#
+# 1. MERGE-ONLY CHECK (blocks): uat and main may only gain merge commits on their
+#    own line. The pre-commit guard stops ordinary commits on them, but git never
+#    runs pre-commit for revert, cherry-pick, rebase or am, so this catches those
+#    (and --no-verify commits) before they leave the machine. Every promotion is a
+#    `git merge --no-ff`, so a correct push only ever adds merges here.
+#      - Checked: the branches in `git config branchguard.mergeonly` (default
+#        "main uat"), except the working branch (`git config workitems.branch`,
+#        else develop), which takes the workflow skills' fast-forwards by design.
+#      - A branch's first push to the remote is not checked (nothing to compare).
+#      - Emergency only: git push --no-verify.
+#
+# 2. SYNNEXUS MIRROR (never blocks): best-effort mirror of _workitems/features/ to
+#    the shared synnexus MinIO bucket, so the cross-project view stays current. A
+#    failed or unconfigured sync prints a one-line warning and the push proceeds.
+#    For a guaranteed, reporting sync (and first-time setup), run /syn-sync-workitems.
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+is_zero() { case "$1" in *[!0]*) return 1 ;; esac; }   # all-zero id (SHA-1 or SHA-256)
+
+# --- 1. merge-only check -------------------------------------------------------
+mergeonly=$(git config --get branchguard.mergeonly || echo "main uat")
+working=$(git config --get workitems.branch || echo develop)
+blocked=0
+while read -r _local_ref local_sha remote_ref remote_sha; do
+  [ -n "${remote_ref:-}" ] || continue
+  branch=${remote_ref#refs/heads/}
+  [ "$branch" != "$working" ] || continue
+  case " $mergeonly " in *" $branch "*) ;; *) continue ;; esac
+  # Deleting the branch (local all zeros), or its first push (remote all zeros):
+  # nothing to compare against.
+  if is_zero "$local_sha" || is_zero "$remote_sha"; then continue; fi
+  # Need the remote tip locally to compare; without it, don't guess.
+  git cat-file -e "$remote_sha^{commit}" 2>/dev/null || continue
+  direct=$(git rev-list --first-parent --no-merges --format='  %h %s' "$remote_sha..$local_sha" | grep -v '^commit ')
+  if [ -n "$direct" ]; then
+    cat >&2 <<EOF
+Push of $branch refused: $branch only receives merges, but its own line has
+commit(s) that aren't merges (a revert, cherry-pick, rebase or --no-verify commit):
+$direct
+Undo them on $branch (e.g. git reset --hard origin/$branch, after saving anything
+you need on a branch), make the change on a fix/* branch, and promote it.
+Emergency only: git push --no-verify
+EOF
+    blocked=1
+  fi
+done
+[ "$blocked" -eq 0 ] || exit 1
+
+# --- 2. synnexus mirror (never blocks) -------------------------------------------
+if [ -x "$HOOK_DIR/sync-workitems.sh" ]; then
+  if ! "$HOOK_DIR/sync-workitems.sh" mirror; then
+    echo "synnexus sync skipped (push continues). Run /syn-sync-workitems to sync and view details." >&2
+  fi
+fi
+
+exit 0

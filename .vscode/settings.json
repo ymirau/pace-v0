@@ -1,0 +1,60 @@
+{
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/*.pyc": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true,
+    ".venv": false,
+    ".python-version": true,
+    "*.egg-info": true
+  },
+  "search.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true,
+    ".venv": true,
+    "uv.lock": true
+  },
+  "files.watcherExclude": {
+    "**/__pycache__/**": true,
+    "**/.venv/**": true,
+    "**/.mypy_cache/**": true,
+    "**/.ruff_cache/**": true,
+    "**/.pytest_cache/**": true
+  },
+  "workbench.colorCustomizations": {
+    // Title bar
+    "titleBar.activeBackground": "#1e3a2b",
+    "titleBar.activeForeground": "#e2f3e8",
+    "titleBar.inactiveBackground": "#1e3a2b",
+    "titleBar.inactiveForeground": "#86a994",
+    "titleBar.border": "#13271c",
+    // Activity bar (leftmost icon strip)
+    "activityBar.background": "#1e3a2b",
+    "activityBar.foreground": "#e2f3e8",
+    "activityBar.inactiveForeground": "#86a994",
+    "activityBar.border": "#13271c",
+    "activityBar.activeBorder": "#5fd08a",
+    "activityBar.activeBackground": "#2c4f3a",
+    "activityBarBadge.background": "#3fa86a",
+    "activityBarBadge.foreground": "#08160e",
+    // Remote indicator (the "WSL: Ubuntu" label, bottom-left of the status bar)
+    "statusBarItem.remoteBackground": "#2c4f3a",
+    "statusBarItem.remoteForeground": "#e2f3e8",
+    "statusBarItem.remoteHoverBackground": "#3a6349",
+    "statusBarItem.remoteHoverForeground": "#ffffff",
+  },
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": true,
+    "editor.formatOnType": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "ruff.importStrategy": "fromEnvironment"
+}

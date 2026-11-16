@@ -84,3 +84,8 @@ _workitems/ralph/archive/
 _workitems/ralph/.last-branch
 _workitems/ralph/.last-story
 _workitems/ralph/.story-attempts
+
+# Pace chat engine: live state and session transcripts
+backend/app/pace/data/state.json
+backend/app/pace/data/seed_mine.json
+backend/app/pace/transcripts/

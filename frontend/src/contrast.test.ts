@@ -95,10 +95,9 @@ const PROOFS: Record<string, Proof[]> = {
   // Primary buttons: surface-coloured ink on a slate-900 fill (and its slate-700 hover).
   surface: [{ on: ["slate-900", "slate-700"] }],
   // Links and accents.
-  "blue-700": [{ on: [...PAGE, "blue-100"] }], // TabBar links, loc badge, Avatar
+  "blue-700": [{ on: [...PAGE, "blue-100"] }], // loc badge, Avatar, "on you" chip, proposal callout
   "red-600": [{ on: [...PAGE, "red-100"] }], // errors, required markers, error banner
-  "amber-700": [{ on: ["amber-100"] }], // "Not set up" / uat badges, warning banner
-  "amber-800": [{ on: ["amber-50"] }], // "not configured" banners
+  "amber-700": [{ on: [...PAGE, "amber-100"] }], // uat badge, warning banner, stale/late flags
   "emerald-700": [{ on: ["emerald-100"] }], // "Set up" / sbx badges
   // Not body text.
   white: [{ exempt: "the scroll-to-top button's arrow icon (a graphic, not text)" }],

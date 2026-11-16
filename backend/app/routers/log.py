@@ -49,6 +49,8 @@ async def _summaries(db: AsyncSession, ids: list[str] | None = None) -> list[Ses
             )
         ).all()
     }
+    # avg() ignores NULLs, which is what we want: a feel-only rating has no cleanup
+    # score and must not be averaged in as a zero.
     rated = {
         sid: (n, avg)
         for sid, n, avg in (
@@ -56,6 +58,16 @@ async def _summaries(db: AsyncSession, ids: list[str] | None = None) -> list[Ses
                 select(ChatRating.session_id, func.count(), func.avg(ChatRating.score))
                 .where(ChatRating.session_id.in_(keys))
                 .group_by(ChatRating.session_id)
+            )
+        ).all()
+    }
+    by_feel = {
+        (sid, feel): n
+        for sid, feel, n in (
+            await db.execute(
+                select(ChatRating.session_id, ChatRating.feel, func.count())
+                .where(ChatRating.session_id.in_(keys))
+                .group_by(ChatRating.session_id, ChatRating.feel)
             )
         ).all()
     }
@@ -75,6 +87,8 @@ async def _summaries(db: AsyncSession, ids: list[str] | None = None) -> list[Ses
                 turns=counts.get((s.id, "assistant"), 0),
                 tool_calls=counts.get((s.id, "tool_call"), 0),
                 rated=n,
+                magic=by_feel.get((s.id, "magic"), 0),
+                annoying=by_feel.get((s.id, "annoying"), 0),
                 avg_score=round(float(avg), 2) if avg is not None else None,
             )
         )
@@ -126,9 +140,13 @@ async def read_stats(db: SessionDep) -> Stats:
 
     version_by_session = {s.id: s.prompt_version for s in sessions}
     assistant = [e for e in events if e.type == "assistant"]
-    scores = [r.score for r in ratings]
+    # A rating is a feel; the cleanup score is optional and often added later, so the
+    # two are counted separately. Averaging over "every rating" would silently treat
+    # a feel-only rating as a zero.
+    scores = [r.score for r in ratings if r.score is not None]
 
-    feels: dict[str, int] = {}
+    # Always all three keys, so the Log page can show "0 annoying" rather than nothing.
+    feels: dict[str, int] = {"magic": 0, "meh": 0, "annoying": 0}
     for r in ratings:
         feels[r.feel] = feels.get(r.feel, 0) + 1
 
@@ -159,19 +177,34 @@ async def read_stats(db: SessionDep) -> Stats:
     proposals.setdefault("rejected", rejected)
     proposals.setdefault("unresolved", max(made - applied - rejected, 0))
 
+    def empty_version() -> dict:
+        return {
+            "turns": 0,
+            "rated": 0,
+            "magic": 0,
+            "annoying": 0,
+            "avg_score": None,
+            "_sum": 0,
+            "_n": 0,
+        }
+
     by_version: dict[str, dict] = {}
     for e in assistant:
         v = version_by_session.get(e.session_id, "?")
-        slot = by_version.setdefault(v, {"turns": 0, "rated": 0, "avg_score": None, "_sum": 0})
-        slot["turns"] += 1
+        by_version.setdefault(v, empty_version())["turns"] += 1
     for r in ratings:
         v = version_by_session.get(r.session_id, "?")
-        slot = by_version.setdefault(v, {"turns": 0, "rated": 0, "avg_score": None, "_sum": 0})
+        slot = by_version.setdefault(v, empty_version())
         slot["rated"] += 1
-        slot["_sum"] += r.score
+        if r.feel in ("magic", "annoying"):
+            slot[r.feel] += 1
+        if r.score is not None:
+            slot["_sum"] += r.score
+            slot["_n"] += 1
     for slot in by_version.values():
-        slot["avg_score"] = round(slot["_sum"] / slot["rated"], 2) if slot["rated"] else None
+        slot["avg_score"] = round(slot["_sum"] / slot["_n"], 2) if slot["_n"] else None
         slot.pop("_sum")
+        slot.pop("_n")
 
     return Stats(
         sessions=len(sessions),
@@ -179,7 +212,8 @@ async def read_stats(db: SessionDep) -> Stats:
         proactive_turns=sum(1 for e in assistant if (e.payload or {}).get("proactive")),
         tool_calls=sum(1 for e in events if e.type == "tool_call"),
         cap_hits=sum(1 for e in assistant if (e.payload or {}).get("cap_hit")),
-        rated=len(scores),
+        rated=len(ratings),
+        scored=len(scores),
         avg_score=round(sum(scores) / len(scores), 2) if scores else None,
         pct_rated_zero=(
             round(100 * sum(1 for s in scores if s == 0) / len(scores), 1) if scores else None

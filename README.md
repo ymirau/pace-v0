@@ -32,15 +32,20 @@ One screen, `/`:
   without leaving the screen.
 - **"Waiting on your yes."** Anything the agent initiates becomes a *pending proposal*
   that changes nothing until you approve it. Approving is one word in the chat.
-- **Magic or annoying, per turn.** Under each of Pace's messages: how it felt (magic /
-  meh / annoying) and what it cost to clean up (0 used as-is … 3 redid it myself), plus
-  an optional note. Both halves are needed before a rating counts — a reply can feel
-  magic and still need heavy editing, and that gap is the finding.
+- **Magic or annoying, after every reply.** Three buttons under each of Pace's messages,
+  and **one press is the whole rating** — it saves on the click. Cleanup cost (0 used
+  as-is … 3 redid it myself) and a note are an optional second step on the same row,
+  because the gut reaction is there the moment you read a reply while cleanup cost is
+  only known once you have used it. It used to need both halves and recorded nothing
+  until it had them, which lost ratings outright.
 
-And `/log`: every session, every turn, every tool call and every rating, with the
-close-out numbers (average cleanup, % used as-is, proposal approve rate, cap hits, and a
-per-prompt-version breakdown) computed from the log rather than by hand. Read-only — a
-log you can tidy up afterwards is worth nothing.
+And `/log`: the verdict first — magic / meh / annoying as counts, percentages of rated
+turns, and how many turns went unrated, because 4-of-5-magic reads differently when 60
+replies were never rated. Then the close-out numbers (average cleanup over the ratings
+that carry a score, % used as-is, proposal approve rate, cap hits, a per-prompt-version
+breakdown) and every session's full transcript with its ratings listed above it. All
+computed from the log rather than by hand. Read-only — a log you can tidy up afterwards
+is worth nothing.
 
 ## What changed from the template
 
@@ -112,7 +117,7 @@ uv sync && cp -n .env.example .env
 #   AUTH_DISABLED=true is already on, so MSAL is bypassed over plain HTTP.
 # Create the log tables once, as the database OWNER (the app role can't run DDL):
 psql -d <your db> -f sql/postgres/001_schema.sql -f sql/postgres/002_chat.sql \
-     -f sql/postgres/003_state.sql
+     -f sql/postgres/003_state.sql -f sql/postgres/004_rating_feel_only.sql
 psql -d <your db> -f sql/postgres/999_grants.sql
 uv run uvicorn main:app --reload --port 8000
 
@@ -126,7 +131,8 @@ routes that call the model (`/chat/stream`, `/chat/open`, `/chat/message`) retur
 missing variable; `/chat/state`, `/api/me`, `/health` and the UI shell all still work.
 
 The same engine runs as a terminal chat in the spike repo, which also has the scenario
-script, the ratings (`/rate`) and the simulated clock (`/advance`) that this UI does not.
+script and the simulated clock (`/advance`) that this UI does not. Its `/rate` takes both
+a cleanup score and a feel; the UI's button needs only the feel.
 
 ## API
 
@@ -137,7 +143,7 @@ script, the ratings (`/rate`) and the simulated clock (`/advance`) that this UI 
 | `POST /api/chat/message` | Send a message, get the reply plus the tools it called. |
 | `GET /api/chat/state` | Projects, tasks, people, proposals and the derived counts. |
 | `POST /api/chat/reset` | Reload a seed (`example` or `blank`) and start a new conversation. |
-| `POST /api/chat/rate` | Score a turn: 0–3 cleanup cost plus magic / meh / annoying. Re-rating replaces. |
+| `POST /api/chat/rate` | Rate a turn: `feel` (magic / meh / annoying) is required and enough on its own; `score` (0–3 cleanup) and `note` are optional. Re-rating replaces. |
 | `GET /api/log/sessions` | Every session, newest first, with turn and rating counts. |
 | `GET /api/log/sessions/{id}` | One session's full transcript. |
 | `GET /api/log/stats` | The close-out numbers. |
@@ -175,7 +181,8 @@ function. Required environment variables on Vercel:
 | `PACE_ACCESS_CODE` | the shared gate. **Without it the URL is an open tap on your API key.** |
 | `AUTH_DISABLED` | `true`, because the reviewer has no Azure account and the access code is the gate instead |
 
-Apply `sql/postgres/001_schema.sql`, `002_chat.sql` and `003_state.sql` to that database
+Apply `sql/postgres/001_schema.sql`, `002_chat.sql`, `003_state.sql` and
+`004_rating_feel_only.sql` to that database
 first, as its owner, then `999_grants.sql`.
 
 Verified end to end: a task added through the chat survives a cold process restart

@@ -112,9 +112,12 @@ async def add_events(session: AsyncSession, session_id: str, lines: list[dict[st
 
 
 async def rate(
-    session: AsyncSession, session_id: str, turn: int, score: int, feel: str, note: str
+    session: AsyncSession, session_id: str, turn: int, score: int | None, feel: str, note: str
 ) -> None:
-    """Rate a turn. Re-rating the same turn replaces the old score rather than stacking."""
+    """Rate a turn. Re-rating the same turn replaces the old row rather than stacking.
+
+    `score` may be None: `feel` alone is a complete rating (see 004_rating_feel_only.sql).
+    """
     stmt = insert(ChatRating).values(
         session_id=session_id, turn=turn, score=score, feel=feel, note=note
     )

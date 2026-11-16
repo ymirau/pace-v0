@@ -158,12 +158,22 @@ export function useTurn() {
   });
 }
 
-/** Score a turn: 0 used as-is … 3 redid it myself, plus how it felt. */
+/**
+ * Rate a turn. `feel` alone is a complete rating — one press, logged.
+ *
+ * `score` is cleanup cost (0 used as-is … 3 redid it myself) and may be null: you only
+ * know it once you have used the reply. Sending it later replaces the same row.
+ */
 export function useRateTurn() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (r: { session_id: string; turn: number; score: number; feel: string; note?: string }) =>
-      apiFetch<void>("/chat/rate", { method: "POST", body: JSON.stringify({ note: "", ...r }) }),
+    mutationFn: (r: {
+      session_id: string;
+      turn: number;
+      feel: string;
+      score?: number | null;
+      note?: string;
+    }) => apiFetch<void>("/chat/rate", { method: "POST", body: JSON.stringify({ note: "", ...r }) }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["log"] }),
   });
 }

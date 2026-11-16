@@ -13,6 +13,99 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
+/**
+ * The verdict, in full: how many replies felt magic, meh or annoying.
+ *
+ * This is the one number v0 is for, so it gets its own panel rather than a tile in a
+ * row of six. Percentages are of *rated* turns, and the unrated count is shown beside
+ * them — 4 magic out of 5 rated means something very different when 60 turns went
+ * unrated, and a panel that hid that would be flattering rather than useful.
+ */
+function Verdict({ feels, rated, turns }: { feels: Record<string, number>; rated: number; turns: number }) {
+  const rows = [
+    { key: "magic", label: "Magic", bar: "bg-emerald-100", text: "text-emerald-700" },
+    { key: "meh", label: "Meh", bar: "bg-slate-100", text: "text-slate-600" },
+    { key: "annoying", label: "Annoying", bar: "bg-red-100", text: "text-red-600" },
+  ] as const;
+  return (
+    <section className="rounded-lg bg-surface p-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Magic or annoying
+        </h2>
+        <p className="text-[12px] text-slate-500">
+          {rated} of {turns} replies rated
+          {turns > rated ? ` · ${turns - rated} not rated yet` : ""}
+        </p>
+      </div>
+      {rated === 0 ? (
+        <p className="text-sm text-slate-400">
+          Nothing rated yet. Press Magic, Meh or Annoying under any reply in the chat — one
+          press is the whole rating.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {rows.map((r) => {
+            const n = feels[r.key] ?? 0;
+            const pct = Math.round((100 * n) / rated);
+            return (
+              <div key={r.key} className="flex items-center gap-3">
+                <span className={`w-20 shrink-0 text-[13px] font-medium ${r.text}`}>{r.label}</span>
+                <div className="h-5 min-w-0 flex-1 rounded bg-canvas">
+                  <div
+                    className={`h-5 rounded ${r.bar}`}
+                    style={{ width: `${pct}%` }}
+                    role="presentation"
+                  />
+                </div>
+                <span className="w-20 shrink-0 text-right text-[13px] tabular-nums text-slate-700">
+                  {n} · {pct}%
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The ratings of one session, listed plainly: what was pressed, and on which turn. */
+function Ratings({ ratings }: { ratings: Record<number, { feel: string; score: number | null; note: string }> }) {
+  const turns = Object.keys(ratings)
+    .map(Number)
+    .sort((a, b) => a - b);
+  if (!turns.length) {
+    return <p className="mb-2 text-[12px] text-slate-400">No ratings in this session.</p>;
+  }
+  const FEEL_STYLE: Record<string, string> = {
+    magic: "bg-emerald-100 text-emerald-700",
+    meh: "bg-slate-100 text-slate-600",
+    annoying: "bg-red-100 text-red-600",
+  };
+  return (
+    <ul className="mb-3 space-y-1">
+      {turns.map((t) => {
+        const r = ratings[t];
+        return (
+          <li key={t} className="flex flex-wrap items-baseline gap-2 text-[12px]">
+            <span className="w-14 shrink-0 tabular-nums text-slate-400">turn {t}</span>
+            <span
+              className={`rounded px-1.5 py-0.5 font-medium ${FEEL_STYLE[r.feel] ?? "bg-slate-100 text-slate-600"}`}
+            >
+              {r.feel}
+            </span>
+            <span className="text-slate-500">
+              {r.score === null ? "no cleanup score" : `cleanup ${r.score}`}
+            </span>
+            {r.note ? <span className="text-slate-700">— {r.note}</span> : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 const TYPE_STYLE: Record<string, string> = {
   user: "text-blue-700",
   assistant: "text-slate-900",
@@ -34,7 +127,9 @@ function EventRow({ e }: { e: LogEvent }) {
       : e.type === "tool_result"
         ? String(p.output ?? "").slice(0, 120).replace(/\n/g, " ⏎ ")
         : e.type === "rating"
-          ? `turn ${p.turn}: ${p.score} ${p.feel}${p.note ? ` — ${p.note}` : ""}`
+          ? `turn ${p.turn}: ${p.feel}${
+              p.score === null || p.score === undefined ? "" : `, cleanup ${p.score}`
+            }${p.note ? ` — ${p.note}` : ""}`
           : e.type === "clock"
             ? `${p.event} ${p.days}d → ${p.sim_today}`
             : text;
@@ -82,20 +177,21 @@ export default function LogPage() {
         </p>
       ) : null}
 
+      {s ? <Verdict feels={s.feels} rated={s.rated} turns={s.turns} /> : null}
+
       {s ? (
-        <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           <Stat label="sessions" value={String(s.sessions)} />
           <Stat label="turns" value={String(s.turns)} hint={`${s.proactive_turns} unprompted`} />
-          <Stat label="rated" value={`${s.rated}/${s.turns}`} />
+          <Stat label="rated" value={`${s.rated}/${s.turns}`} hint="one press each" />
           <Stat
             label="avg cleanup"
             value={s.avg_score === null ? "—" : s.avg_score.toFixed(2)}
-            hint={s.pct_rated_zero === null ? "nothing rated" : `${s.pct_rated_zero}% used as-is`}
-          />
-          <Stat
-            label="felt magic"
-            value={String(s.feels.magic ?? 0)}
-            hint={`${s.feels.annoying ?? 0} annoying · ${s.feels.meh ?? 0} meh`}
+            hint={
+              s.scored === 0
+                ? "no cleanup scores yet"
+                : `over ${s.scored} · ${s.pct_rated_zero}% used as-is`
+            }
           />
           <Stat
             label="proposals"
@@ -119,7 +215,8 @@ export default function LogPage() {
           <div className="flex flex-wrap gap-4 text-[13px] text-slate-700">
             {Object.entries(s.by_prompt_version).map(([v, d]) => (
               <span key={v}>
-                <strong>{v}</strong>: {d.turns} turns, {d.rated} rated, avg{" "}
+                <strong>{v}</strong>: {d.turns} turns, {d.rated} rated — {d.magic} magic,{" "}
+                {d.annoying} annoying, avg cleanup{" "}
                 {d.avg_score === null ? "—" : d.avg_score.toFixed(2)}
               </span>
             ))}
@@ -155,7 +252,9 @@ export default function LogPage() {
                   {x.seed} · {x.prompt_version} · {x.turns} turns · {x.tool_calls} tools
                 </span>
                 <span className="ml-auto text-[12px] text-slate-500">
-                  {x.rated ? `${x.rated} rated, avg ${x.avg_score?.toFixed(2)}` : "unrated"}
+                  {x.rated
+                    ? `${x.magic} magic · ${x.annoying} annoying · ${x.rated} rated`
+                    : "unrated"}
                 </span>
               </button>
 
@@ -164,6 +263,7 @@ export default function LogPage() {
                   {detail.isLoading ? (
                     <p className="text-sm text-slate-400">loading transcript…</p>
                   ) : null}
+                  {detail.data ? <Ratings ratings={detail.data.ratings} /> : null}
                   <ul>{detail.data?.events.map((e) => <EventRow key={e.seq} e={e} />)}</ul>
                   <p className="mt-2 text-[11px] text-slate-400">
                     * a hidden turn is the check-in the agent gives itself on open — it

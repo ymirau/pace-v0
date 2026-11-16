@@ -17,6 +17,8 @@ class SessionSummary(BaseModel):
     turns: int
     tool_calls: int
     rated: int
+    magic: int
+    annoying: int
     avg_score: float | None
 
 
@@ -42,6 +44,9 @@ class Stats(BaseModel):
     tool_calls: int
     cap_hits: int
     rated: int
+    """Turns with a magic / meh / annoying verdict — one press is enough."""
+    scored: int
+    """Of those, how many also carry a cleanup score. `avg_score` is over these only."""
     avg_score: float | None
     pct_rated_zero: float | None
     feels: dict[str, int]

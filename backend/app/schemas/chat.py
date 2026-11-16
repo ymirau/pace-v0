@@ -19,10 +19,17 @@ class ToolCall(BaseModel):
 
 
 class RatingSend(BaseModel):
+    """One press is a whole rating.
+
+    `feel` is the gut reaction and is required — it is the question v0 exists to answer.
+    `score` is cleanup cost (0 used as-is … 3 redid it myself) and is optional, because
+    you only know it once you have used the reply; sending it later replaces the row.
+    """
+
     session_id: str
     turn: int = Field(ge=1)
-    score: int = Field(ge=0, le=3, description="0 used as-is … 3 redid it myself")
     feel: str = Field(pattern="^(magic|annoying|meh)$")
+    score: int | None = Field(None, ge=0, le=3, description="0 used as-is … 3 redid it myself")
     note: str = Field("", max_length=1000)
 
 

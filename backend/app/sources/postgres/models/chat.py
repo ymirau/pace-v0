@@ -47,7 +47,8 @@ class ChatRating(Base):
         ForeignKey("pace.chat_sessions.id", ondelete="CASCADE"), primary_key=True
     )
     turn: Mapped[int] = mapped_column(Integer, primary_key=True)
-    score: Mapped[int] = mapped_column(SmallInteger)
+    # Optional: how it felt is one press, cleanup cost is only known later.
+    score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     feel: Mapped[str] = mapped_column(Text)
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

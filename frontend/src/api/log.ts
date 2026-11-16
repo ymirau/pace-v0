@@ -14,7 +14,11 @@ export interface SessionSummary {
   business: string | null;
   turns: number;
   tool_calls: number;
+  /** Turns with a magic / meh / annoying verdict. One press is enough. */
   rated: number;
+  magic: number;
+  annoying: number;
+  /** Over the ratings that also carry a cleanup score; null when none do. */
   avg_score: number | null;
 }
 
@@ -26,8 +30,9 @@ export interface LogEvent {
 }
 
 export interface Rating {
-  score: number;
   feel: string;
+  /** Null when the turn was rated by feel alone, which is a complete rating. */
+  score: number | null;
   note: string;
 }
 
@@ -44,11 +49,17 @@ export interface Stats {
   tool_calls: number;
   cap_hits: number;
   rated: number;
+  /** Of those, how many also carry a cleanup score. `avg_score` is over these only. */
+  scored: number;
   avg_score: number | null;
   pct_rated_zero: number | null;
+  /** Always carries all three keys, so "0 annoying" renders as a number. */
   feels: Record<string, number>;
   proposals: Record<string, number>;
-  by_prompt_version: Record<string, { turns: number; rated: number; avg_score: number | null }>;
+  by_prompt_version: Record<
+    string,
+    { turns: number; rated: number; magic: number; annoying: number; avg_score: number | null }
+  >;
 }
 
 export function useLogSessions() {

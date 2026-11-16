@@ -76,6 +76,22 @@ def _require_key(settings: Settings) -> str:
     return settings.anthropic_api_key
 
 
+def _resumed_turn_count(stored: list[dict]) -> int:
+    """How many turns the founder has actually taken, from the stored history.
+
+    Ratings are keyed on (session_id, turn), so this has to land on the same number the
+    live agent would have reached — otherwise a verdict given after a cold start points
+    at a reply nobody gave.
+
+    Only count what was typed. A `tool_result` is appended with role "user" too, because
+    the Messages API has no third role, so counting every user message inflated the
+    number by one per tool call: two real turns and three tool results came back as
+    turn 5 on the deployed app. A typed turn is the string form; tool results are always
+    a list of content blocks. See tests/test_resume_turns.py.
+    """
+    return sum(1 for m in stored if m.get("role") == "user" and isinstance(m.get("content"), str))
+
+
 async def _agent(db: AsyncSession, settings: Settings, *, resume: bool = True) -> Agent:
     """The live conversation. Resumed from Postgres when this worker has never seen it."""
     key = _require_key(settings)
@@ -107,9 +123,7 @@ async def _agent(db: AsyncSession, settings: Settings, *, resume: bool = True) -
         stored = await chat_log.load_messages(db, sid)
         if stored:
             agent.messages = stored
-            # Turn numbering continues from the stored history, so a rating made after
-            # a cold start still points at the turn the reviewer actually read.
-            agent.turn = sum(1 for m in stored if m.get("role") == "user")
+            agent.turn = _resumed_turn_count(stored)
     _CACHE.clear()
     _CACHE[log.session] = agent
     return agent

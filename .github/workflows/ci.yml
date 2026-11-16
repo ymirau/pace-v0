@@ -27,6 +27,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege, and `pull-requests: read` is not optional: on a pull_request event
+# dorny/paths-filter asks the API which files changed, and without it the job dies with
+# "Resource not accessible by integration". The default token grants neither.
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   changes:
     runs-on: ubuntu-latest

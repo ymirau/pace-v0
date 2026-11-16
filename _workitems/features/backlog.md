@@ -11,11 +11,11 @@ _Last triaged: 2026-11-16_
 
 ## Features
 
-### pace-logo — `triaged`
+### pace-logo — `in-progress`
 **Summary:** Give Pace its own mark, replacing the Synveon template branding everywhere it still shows.
 **Absorbs:** #1
 **Size:** S/M · **Order:** 1 · **Depends on:** — · **Requested on:** 2026-11-16 · **Last worked on:** 2026-11-16
-**Artifacts:** —
+**Artifacts:** — (built directly, no planning/PRD round)
 **Contributors:** Inji Choe <injic05@gmail.com>
 **Notes:** The app still wears the template's identity: `frontend/src/components/Layout.tsx`
 (lines 118–119) renders Synveon's `logo.png` / `logo_dark.png` in the sidebar,
@@ -35,9 +35,17 @@ tags for the shared-link preview. That was offered and not taken; if how the Ver
 link looks in Slack or email starts to matter, it returns as its own feature, since it
 needs a preview image that this one does not.
 
-Worth knowing when this is planned: it is the first thing CH sees on the review link, and
-it is independent of everything else in flight — no backend, no database, no agent
-behaviour.
+Built 2026-11-16 on `feature/pace-chat-ui` rather than its own branch, so the Vercel
+review link stays one deployable thing. `frontend/src/components/PaceLogo.tsx` draws the
+glyph (three motion lines running into a chevron) plus the word, in `currentColor` and
+the app's font, so the light/dark PNG pair is gone — both template logos are deleted.
+`public/favicon.svg` is the same chevron on a rounded tile, with an embedded
+`prefers-color-scheme` query that inverts it so a dark tile does not vanish into dark
+browser chrome. Tab title is now "Pace".
+
+Not done: the sidebar still shows `pace-v0` on the small line under the wordmark. That is
+the template's project-name chrome and it carries the version, so it was left rather than
+quietly removed.
 
 ## Needs clarification
 

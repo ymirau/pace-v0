@@ -4,10 +4,9 @@ import { NavLink, Outlet } from "react-router-dom";
 
 import { AUTH_BYPASS } from "../authBypass";
 import { ENV_LABEL } from "../env";
-import logo from "../assets/logo.png";
-import logoDark from "../assets/logo_dark.png";
 import { useNavCollapsed } from "./navCollapse";
 import NavRail, { type NavEntry } from "./NavRail";
+import PaceLogo from "./PaceLogo";
 import ScrollToTopButton from "./ScrollToTopButton";
 import SettingsMenu from "./SettingsMenu";
 import SignOutDialog from "./SignOutDialog";
@@ -112,11 +111,9 @@ export default function Layout() {
       >
         <div className="mb-2 px-4 pb-4">
           <div className="mb-2 mt-1.5 flex items-center justify-between gap-2">
-            {/* The logo's navy lettering vanishes on the dark sidebar, so dark mode
-                swaps in a copy with the lettering recoloured to the dark theme's ink
-                (#e7e1d6); the swoosh and mountain are unchanged. */}
-            <img src={logo} alt="Synveon" className="h-8 w-auto dark:hidden" />
-            <img src={logoDark} alt="Synveon" className="hidden h-8 w-auto dark:block" />
+            {/* One mark for both themes: PaceLogo draws in currentColor, so there is
+                no light/dark pair of images to keep in step. */}
+            <PaceLogo className="text-slate-900" />
             {envBadge}
           </div>
           {/* Truncated so a long project name stays on one line; hover shows it all. */}

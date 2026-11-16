@@ -6,11 +6,16 @@ process memory or a writable disk:
 * the conversation is loaded from and saved to Postgres each turn (see
   app/routers/chat.py), not held in a module-level dict;
 * the JSONL transcript writer tolerates a read-only filesystem and the durable copy
-  lives in `pace.chat_events`.
+  lives in `pace.chat_events`;
+* the business state (projects, tasks, proposals) is one JSONB document in
+  `pace.pace_state`, loaded before each turn and written back after, so work added
+  through the chat survives a recycled function. `app/pace/store.py` still writes its
+  JSON file as a cache and swallows the resulting OSError here.
 
-The business state (projects, tasks, proposals) is still the spike's JSON file, which is
-**ephemeral here** — see README.md → Deploying. That is the one thing a reviewer should
-know before judging the deployed app.
+`vercel.json` sets `includeFiles` for `backend/app/pace/**` because the engine reads two
+things off disk that no import graph mentions: the versioned prompts under `prompts/`
+and the seed fixtures under `data/`. Without them the first request dies in
+`latest_prompt()`.
 """
 
 import sys

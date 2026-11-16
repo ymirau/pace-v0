@@ -2,7 +2,7 @@ import { useMsal } from "@azure/msal-react";
 import { useRef, useState, type ReactNode } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
-import { AUTH_BYPASS } from "../authBypass";
+import { AUTH_BYPASS, AUTH_BYPASS_REASON } from "../authBypass";
 import { ENV_LABEL } from "../env";
 import { useNavCollapsed } from "./navCollapse";
 import NavRail, { type NavEntry } from "./NavRail";
@@ -145,7 +145,7 @@ export default function Layout() {
         </nav>
         <div className="flex items-center gap-2 px-4 pt-4 text-[11px] text-slate-500">
           {AUTH_BYPASS ? (
-            <div className="min-w-0 italic">Local dev — auth bypassed</div>
+            <div className="min-w-0 italic">{AUTH_BYPASS_REASON} — auth bypassed</div>
           ) : (
             <div className="min-w-0 truncate" title={account?.username}>
               {account?.name ?? account?.username ?? "Signed in"}

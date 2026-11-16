@@ -186,7 +186,7 @@ export default function ChatPage() {
     const what =
       seed === "blank"
         ? "Start from an empty business? Pace will ask you what you're working on."
-        : "Load the Kiln & Co example? This clears the conversation and the state.";
+        : "Load the Tideline example (pre-launch B2B SaaS)? This clears the conversation and the state.";
     if (!confirm(what)) return;
     reset.mutate(seed, {
       onSuccess: () => {
@@ -220,7 +220,7 @@ export default function ChatPage() {
           {s ? (
             <div className="flex gap-1.5 text-xs">
               <button
-                onClick={() => onReset("example")}
+                onClick={() => onReset("startup")}
                 className="rounded border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-100"
               >
                 load example

@@ -15,9 +15,22 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 STATE = DATA / "state.json"
 
-# Short names for /reset. "example" is the Maya / Kiln & Co fixture every scenario
-# in scenarios.md assumes; "mine" is your own business, copied from seed_blank.json.
-SEEDS = {"example": "seed", "blank": "seed_blank", "mine": "seed_mine"}
+# Short names for /reset.
+#
+# "startup" is the default demo: Alex / Tideline, a pre-launch B2B SaaS. "ceramics" is
+# the original Maya / Kiln & Co fixture, kept under its own name rather than replaced —
+# every scenario in scenarios.md assumes it, and transcripts recorded before the switch
+# say seed="example", so repointing that name would quietly change what old evidence
+# means. "example" therefore still resolves to the ceramics fixture.
+#
+# "mine" is your own business, copied from seed_blank.json.
+SEEDS = {
+    "startup": "seed_startup",
+    "ceramics": "seed",
+    "example": "seed",
+    "blank": "seed_blank",
+    "mine": "seed_mine",
+}
 
 
 def seed_path(name="seed"):

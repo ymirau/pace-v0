@@ -71,9 +71,10 @@ so there is nobody to be an admin over. `GET /api/me` now returns email and name
 ```
 backend/app/pace/                 the agent engine, vendored from the spike
   store.py tools.py agent.py logger.py
-  data/seed.json                  Maya / Kiln & Co — the worked example
+  data/seed_startup.json          Alex / Tideline, pre-launch B2B SaaS — the demo
+  data/seed.json                  Maya / Kiln & Co — the original fixture ("ceramics")
   data/seed_blank.json            template to fill in with your own business
-  prompts/system_v1.md            versioned, never edited in place
+  prompts/system_v3.md            versioned, never edited in place (v1, v2 kept)
 backend/app/routers/chat.py       /api/chat/{open,message,state,reset}
 backend/app/schemas/chat.py
 frontend/src/api/chat.ts          TanStack Query hooks + types
@@ -142,7 +143,7 @@ a cleanup score and a feel; the UI's button needs only the feel.
 | `POST /api/chat/open` | The proactive check-in, waited out in one response. Catches a real-time seed's clock up first. |
 | `POST /api/chat/message` | Send a message, get the reply plus the tools it called. |
 | `GET /api/chat/state` | Projects, tasks, people, proposals and the derived counts. |
-| `POST /api/chat/reset` | Reload a seed (`example` or `blank`) and start a new conversation. |
+| `POST /api/chat/reset` | Reload a seed (`startup`, `ceramics`, `blank`, `mine`) and start a new conversation. |
 | `POST /api/chat/rate` | Rate a turn: `feel` (magic / meh / annoying) is required and enough on its own; `score` (0–3 cleanup) and `note` are optional. Re-rating replaces. |
 | `GET /api/log/sessions` | Every session, newest first, with turn and rating counts. |
 | `GET /api/log/sessions/{id}` | One session's full transcript. |
@@ -158,6 +159,25 @@ locally, which leaves the gate open; **set it in every deployed env.**
 Every `/api` route requires a token, enforced in one place by
 `backend/tests/test_auth_guard.py`, which walks the route table and fails on any `/api`
 route missing `get_current_user`.
+
+## Who it's written for, and the seeds
+
+The agent is aimed at a solo founder building and selling the first version of something
+— most often software. `prompts/system_v3.md` names the failures that actually recur at
+that stage and tells it to look for them: shipping versus polishing, the founder as the
+single point of failure, long-lead outside gates (an audit, a payment processor, app
+review, legal), scope growing while the date doesn't, and nobody having spoken to a
+customer in weeks. It stays general on purpose — the same shapes hold for a bakery, where
+the long-lead gate is a supplier rather than an auditor — so the blank seed still works
+for anyone.
+
+The demo seed is **Tideline**, a pre-launch B2B SaaS: three design partners lined up, a
+10-day deadline to get them paying, a contractor and a part-time designer, and five
+problems planted so they are *findable* rather than guessable — including two date
+collisions the agent has to compute, not read. The original ceramics fixture is kept
+under the name `ceramics` (and still answers to `example`) because every case in the
+spike's `scenarios.md` assumes it, and transcripts recorded before the switch say
+`seed="example"`; repointing that name would quietly change what old evidence means.
 
 ## Use your own business instead of the example
 

@@ -89,3 +89,5 @@ _workitems/ralph/.story-attempts
 backend/app/pace/data/state.json
 backend/app/pace/data/seed_mine.json
 backend/app/pace/transcripts/
+.vercel
+.env*

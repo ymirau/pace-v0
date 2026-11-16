@@ -101,13 +101,18 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Apply the schema
-        # Every sql/postgres/NNN_*.sql in numeric order. Globbed rather than listed, so
-        # adding an entity cannot leave CI behind — which is exactly how the old config
-        # ended up applying three files that no longer existed. 999_grants.sql is
-        # skipped on purpose: here the test user owns the database, so it already has
-        # every privilege the grants would hand to a separate app role.
+        # Every DDL file in numeric order. Globbed rather than listed, so adding an
+        # entity cannot leave CI behind — which is exactly how the old config ended up
+        # applying three files that no longer existed.
+        #
+        # [0-8] on the first digit, not [0-9]: 9xx is reserved for grants, and
+        # 999_grants.sql hands privileges to the `app_admin` login role, which does not
+        # exist here. In CI the test user owns the database and already holds
+        # everything those grants would give away, so applying it only fails the job
+        # with `role "app_admin" does not exist` — which is precisely what a [0-9] glob
+        # did on the first run.
         run: |
-          for f in $(ls sql/postgres/[0-9][0-9][0-9]_*.sql | sort); do
+          for f in $(ls sql/postgres/[0-8][0-9][0-9]_*.sql | sort); do
             echo "applying $f"
             PGPASSWORD=pace psql -h localhost -U pace -d pace_test -v ON_ERROR_STOP=1 -q -f "$f"
           done

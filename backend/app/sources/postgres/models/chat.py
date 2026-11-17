@@ -20,6 +20,10 @@ class ChatSession(Base):
     model: Mapped[str] = mapped_column(Text)
     prompt_version: Mapped[str] = mapped_column(Text)
     seed: Mapped[str] = mapped_column(Text)
+    # Which browser this conversation belongs to (app/core/visitor.py). Not an
+    # identity, and not a secret: it partitions demo worlds so one reviewer's
+    # cleanup does not rewrite the app the next reviewer is shown.
+    visitor: Mapped[str] = mapped_column(Text, default="solo", server_default="solo")
     sim_today: Mapped[date | None] = mapped_column(nullable=True)
     messages: Mapped[list[Any]] = mapped_column(JSONB, default=list)
     founder: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)

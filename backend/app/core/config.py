@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # A shared code the SPA sends as X-Pace-Access-Code. Empty = gate open (local
     # dev only). Set it in every deployed env: the chat spends real money.
     pace_access_code: str = Field("", alias="PACE_ACCESS_CODE")
+    # A SECOND secret, for the log viewer at /viewer. Separate on purpose: the
+    # reviewer code must not also read every other reviewer's transcript.
+    pace_viewer_code: str = Field("", alias="PACE_VIEWER_CODE")
 
     # --- Postgres (shared Synveon instance) ---
     # pytest runs against this same URL and rolls back every change; CI points it

@@ -35,7 +35,24 @@ human-facing overview; this file is the operational guide for extending the code
    route without `get_current_user`, so routers don't need their own auth test. Code
    that records who acted uses `principal_identity()` and reads an email with
    `principal_email()` (both in `app/core/security.py`), never raw token claims.
-6. **Sign-in recovery depends on msal-browser 4.x internals.**
+6. **State is per visitor; the log is not.** Every `/api/chat` route is scoped to the
+   caller's `X-Pace-Visitor` header (`app/core/visitor.py`), so each browser gets its own
+   copy of the seed and its own conversation — one reviewer's cleanup must never change
+   what the next reviewer is shown, or their ratings stop being comparable. `chat_events`
+   and `chat_ratings` stay global: the evidence is the deliverable and is read across
+   everybody. A new state read or write that forgets the visitor argument silently
+   reintroduces the shared world, so `tests/test_visitors.py` pins both halves.
+   The id is client-supplied and is **not** an identity, not a credential and not a
+   secret; `solo` is reserved for a caller that sends none and maps to the pre-visitor
+   `'current'` row.
+7. **Two codes, and they are not interchangeable.** `PACE_ACCESS_CODE` gates `/api/chat`
+   (a bill guard, shared with every reviewer). `PACE_VIEWER_CODE` gates `/api/log` and
+   the `/viewer` page. They are separate because the log now holds every reviewer's
+   transcript and the notes written about the agent's replies, so the code handed out
+   with the link must not read it. **Both gates are open when their variable is empty**,
+   which is right locally and means a deployed env that sets one and not the other has
+   published what the other protects.
+8. **Sign-in recovery depends on msal-browser 4.x internals.**
    `frontend/src/authRecovery.ts` clears MSAL's `msal.`-prefixed sessionStorage keys and
    expires its `msal.cache.encryption` cookie. On a major `@azure/msal-browser` upgrade,
    re-check those names before shipping, or "Sign in again" may silently stop working.

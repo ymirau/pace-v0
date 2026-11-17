@@ -12,6 +12,11 @@ Two things live here:
   request that lands on a cold process can rebuild the agent instead of losing the
   thread. That is what makes the chat survive on Vercel.
 
+The **events and ratings are global** — they are the deliverable, read across every
+visitor by the viewer at `/viewer`. Only `chat_sessions` (and the state document) are
+partitioned, so one reviewer's world cannot leak into another's while the evidence from
+all of them still accumulates in one place.
+
 Every write is best-effort: if the database is unreachable the chat must still work, so
 failures are logged and swallowed. A lost log line is bad; a chat that 500s because the
 log was down is worse.
@@ -37,6 +42,7 @@ async def ensure_session(
     model: str,
     prompt_version: str,
     seed: str,
+    visitor: str,
     sim_today: str | None,
     founder: dict[str, Any],
 ) -> None:
@@ -47,6 +53,7 @@ async def ensure_session(
         model=model,
         prompt_version=prompt_version,
         seed=seed,
+        visitor=visitor,
         sim_today=sim,
         founder=founder,
         messages=[],
@@ -74,12 +81,18 @@ async def load_messages(session: AsyncSession, session_id: str) -> list[Any] | N
     return list(row.messages) if row else None
 
 
-async def latest_session_id(session: AsyncSession, seed: str) -> str | None:
-    """The most recently touched session for this seed — what a cold process resumes."""
+async def latest_session_id(session: AsyncSession, seed: str, visitor: str) -> str | None:
+    """The most recently touched session for this seed AND this visitor.
+
+    `visitor` is not optional on purpose. Without it this returned the newest session
+    across everybody, so a second person on the review link was dropped into the first
+    person's conversation mid-thread — they saw replies to questions they had not asked,
+    and their rating of "turn 6" landed on somebody else's turn 6.
+    """
     return (
         await session.execute(
             select(ChatSession.id)
-            .where(ChatSession.seed == seed)
+            .where(ChatSession.seed == seed, ChatSession.visitor == visitor)
             .order_by(ChatSession.updated_at.desc())
             .limit(1)
         )

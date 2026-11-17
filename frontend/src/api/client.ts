@@ -1,6 +1,8 @@
 import { InteractionRequiredAuthError } from "@azure/msal-browser";
 
 import { getAccessCode } from "../accessCode";
+import { getVisitorId } from "../visitor";
+import { getViewerCode } from "../viewerCode";
 import { apiRequest } from "../authConfig";
 import { AUTH_BYPASS } from "../authBypass";
 import { reportAuthFailure } from "../authRecovery";
@@ -18,14 +20,18 @@ const API_BASE_URL = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`;
  * AuthGate shows the recovery page, and rethrown — never redirected.
  */
 async function getAccessToken(): Promise<string> {
-  const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
+  const account =
+    msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
   if (!account) {
     await msalInstance.acquireTokenRedirect(apiRequest);
     // Redirect navigates away; this line is unreachable but satisfies the type.
     throw new Error("Redirecting for authentication");
   }
   try {
-    const result = await msalInstance.acquireTokenSilent({ ...apiRequest, account });
+    const result = await msalInstance.acquireTokenSilent({
+      ...apiRequest,
+      account,
+    });
     return result.accessToken;
   } catch (error) {
     if (error instanceof InteractionRequiredAuthError) {
@@ -64,18 +70,26 @@ export class TokenUnavailableError extends Error {
  *
  * MSAL caches per-scope, so repeated calls cost a cache read, not a round trip.
  */
-export async function acquireTokenSilently(scopes: readonly string[]): Promise<string> {
+export async function acquireTokenSilently(
+  scopes: readonly string[],
+): Promise<string> {
   if (AUTH_BYPASS) {
     throw new TokenUnavailableError(
       "this page runs with auth bypassed (HTTP), so there is no Azure session to search with.",
     );
   }
-  const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
+  const account =
+    msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
   if (!account) {
-    throw new TokenUnavailableError("you are not signed in to Azure on this page.");
+    throw new TokenUnavailableError(
+      "you are not signed in to Azure on this page.",
+    );
   }
   try {
-    const result = await msalInstance.acquireTokenSilent({ scopes: [...scopes], account });
+    const result = await msalInstance.acquireTokenSilent({
+      scopes: [...scopes],
+      account,
+    });
     return result.accessToken;
   } catch (error) {
     if (error instanceof InteractionRequiredAuthError) {
@@ -121,8 +135,18 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
 
-/** The headers every call needs: JSON, the bearer token unless bypassed, the gate code. */
-async function apiHeaders(extra?: HeadersInit): Promise<Record<string, string>> {
+/**
+ * The headers every call needs: JSON, the bearer token unless bypassed, and the three
+ * Pace-specific ones.
+ *
+ * Both codes are attached to every request even though no single route wants both. They
+ * are checked by different dependencies (`core/gate.py`) and an unexpected one is
+ * ignored, so sending both costs two short headers and removes a whole class of bug:
+ * a call that needs the viewer code but was written before anyone remembered to pass it.
+ */
+async function apiHeaders(
+  extra?: HeadersInit,
+): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(extra as Record<string, string>),
@@ -130,10 +154,18 @@ async function apiHeaders(extra?: HeadersInit): Promise<Record<string, string>> 
   if (!AUTH_BYPASS) {
     headers.Authorization = `Bearer ${await getAccessToken()}`;
   }
+  // Which browser is asking, so this visitor gets their own world rather than sharing
+  // one with every other reviewer. Not an identity — see visitor.ts.
+  headers["X-Pace-Visitor"] = getVisitorId();
   // The deployed app's shared gate. Absent locally, where the backend leaves it open.
   const code = getAccessCode();
   if (code) {
     headers["X-Pace-Access-Code"] = code;
+  }
+  // The log viewer's separate code, for /api/log/*.
+  const viewer = getViewerCode();
+  if (viewer) {
+    headers["X-Pace-Viewer-Code"] = viewer;
   }
   return headers;
 }
@@ -144,22 +176,34 @@ async function apiHeaders(extra?: HeadersInit): Promise<Record<string, string>> 
  * `text/event-stream` turns (`src/api/chat.ts`); an error status is still raised as an
  * {@link ApiError}, because at that point nothing has been streamed yet.
  */
-export async function apiStream(path: string, init: RequestInit = {}): Promise<Response> {
+export async function apiStream(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: await apiHeaders(init.headers),
   });
   if (!response.ok) {
-    throw new ApiError(response.status, response.statusText, await response.text());
+    throw new ApiError(
+      response.status,
+      response.statusText,
+      await response.text(),
+    );
   }
   if (!response.body) {
-    throw new Error("This browser gave no readable body for the streamed reply.");
+    throw new Error(
+      "This browser gave no readable body for the streamed reply.",
+    );
   }
   return response;
 }
 
 /** Fetch wrapper that injects the bearer token (unless bypassed) and JSON headers. */
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
   const headers = await apiHeaders(init.headers);
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
 
@@ -179,7 +223,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
  * the bearer token, but it does NOT set Content-Type — the browser must set it,
  * including the multipart boundary. Pass a FormData with your file field(s).
  */
-export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+export async function apiUpload<T>(
+  path: string,
+  formData: FormData,
+): Promise<T> {
   const headers: Record<string, string> = {};
   if (!AUTH_BYPASS) {
     headers.Authorization = `Bearer ${await getAccessToken()}`;

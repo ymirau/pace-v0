@@ -45,13 +45,26 @@ One screen, `/`:
   only known once you have used it. It used to need both halves and recorded nothing
   until it had them, which lost ratings outright.
 
-And `/log`: the verdict first — magic / meh / annoying as counts, percentages of rated
-turns, and how many turns went unrated, because 4-of-5-magic reads differently when 60
-replies were never rated. Then the close-out numbers (average cleanup over the ratings
-that carry a score, % used as-is, proposal approve rate, cap hits, a per-prompt-version
-breakdown) and every session's full transcript with its ratings listed above it. All
-computed from the log rather than by hand. Read-only — a log you can tidy up afterwards
-is worth nothing.
+**Everyone who opens the link gets their own copy of the same app.** One shared world
+was the obvious thing to build and the wrong thing: the first reviewer to clear an
+overdue task decided what the second reviewer was shown, so the two of them rated
+different apps and nothing in the log said so. Each browser now has its own state and
+its own conversation, keyed off an id it mints for itself — not a login, and not a
+claim about who anyone is. The **evidence stays pooled**: every rating and transcript
+from every browser lands in one place.
+
+That place is **`/viewer`**, a separate page behind a separate code, not a tab in the
+app. The verdict first — magic / meh / annoying as counts, percentages of rated turns,
+and how many turns went unrated, because 4-of-5-magic reads differently when 60 replies
+were never rated. Then the close-out numbers (average cleanup over the ratings that
+carry a score, % used as-is, proposal approve rate, cap hits, a per-prompt-version and a
+per-browser breakdown) and every session's full transcript with its ratings listed above
+it. All computed from the log rather than by hand. Read-only — a log you can tidy up
+afterwards is worth nothing.
+
+It is deliberately not reachable from the app. Reviewers share one access code, and the
+log holds all of their transcripts; showing someone the instrument also changes what
+they rate.
 
 ## What changed from the template
 
@@ -153,14 +166,27 @@ a cleanup score and a feel; the UI's button needs only the feel.
 | `POST /api/chat/rate` | Rate a turn: `feel` (magic / meh / annoying) is required and enough on its own; `score` (0–3 cleanup) and `note` are optional. Re-rating replaces. |
 | `GET /api/log/sessions` | Every session, newest first, with turn and rating counts. |
 | `GET /api/log/sessions/{id}` | One session's full transcript. |
-| `GET /api/log/stats` | The close-out numbers. |
+| `GET /api/log/stats` | The close-out numbers, with per-version and per-browser breakdowns. |
+| `GET /api/chat/ping` | Is the access code right? Nothing else — the SPA's gate probes it. |
 | `GET /api/me` | The caller's email and name. |
 | `GET /health` | Liveness, unauthenticated and ungated, at the root. |
 
-Every `/api` route needs a token **and**, when `PACE_ACCESS_CODE` is set, the shared code
-in an `X-Pace-Access-Code` header. The code is **not authentication** — one secret, no
-identity, no audit — it exists so a review link can't run up the Anthropic bill. Empty
-locally, which leaves the gate open; **set it in every deployed env.**
+Every `/api` route needs a token. Beyond that there are **two codes, and they are not
+interchangeable**:
+
+| Routes | Header | Variable | What it is for |
+|---|---|---|---|
+| `/api/chat/*` | `X-Pace-Access-Code` | `PACE_ACCESS_CODE` | So a review link can't run up the Anthropic bill. Shared with every reviewer. |
+| `/api/log/*` | `X-Pace-Viewer-Code` | `PACE_VIEWER_CODE` | So the code you hand out doesn't also read every other reviewer's transcript. Yours. |
+
+Neither is **authentication** — one secret each, no identity, no audit. **Both gates are
+open while their variable is empty**, which is right locally and means a deployed env
+that sets one and not the other has published whatever the other protects.
+
+`/api/chat/*` is also scoped by an `X-Pace-Visitor` header, which the SPA mints per
+browser and stores. It picks which copy of the state to use. It is client-supplied, so
+it is not a credential and gates nothing; `solo` is reserved for a caller that sends
+none (curl, the terminal spike, local dev).
 
 Every `/api` route requires a token, enforced in one place by
 `backend/tests/test_auth_guard.py`, which walks the route table and fails on any `/api`
@@ -205,10 +231,11 @@ function. Required environment variables on Vercel:
 | `ANTHROPIC_API_KEY` | the agent |
 | `POSTGRES_URL` | `postgresql+asyncpg://…` — a hosted database (Neon et al.); the log and the conversation live here |
 | `PACE_ACCESS_CODE` | the shared gate. **Without it the URL is an open tap on your API key.** |
+| `PACE_VIEWER_CODE` | the `/viewer` gate. **Without it every reviewer's transcript is readable by anyone with the link.** |
 | `AUTH_DISABLED` | `true`, because the reviewer has no Azure account and the access code is the gate instead |
 
-Apply `sql/postgres/001_schema.sql`, `002_chat.sql`, `003_state.sql` and
-`004_rating_feel_only.sql` to that database
+Apply `sql/postgres/001_schema.sql`, `002_chat.sql`, `003_state.sql`,
+`004_rating_feel_only.sql` and `005_visitor.sql` to that database
 first, as its owner, then `999_grants.sql`.
 
 Verified end to end: a task added through the chat survives a cold process restart

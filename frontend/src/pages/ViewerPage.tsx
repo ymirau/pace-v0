@@ -238,12 +238,66 @@ function EventRow({ e }: { e: LogEvent }) {
   );
 }
 
+/**
+ * Whether the page is re-reading the log, and when it last did.
+ *
+ * Worth the pixels: the failure this replaces was a page that looked correct and was
+ * silently stale, and "0 magic" is indistinguishable from "not updating" unless the page
+ * says which it is. The ticking clock is the proof.
+ *
+ * Pause exists because the list reorders as sessions are touched, which fights you while
+ * you are reading a long transcript.
+ */
+function LiveBadge({
+  live,
+  onToggle,
+  updatedAt,
+  fetching,
+}: {
+  live: boolean;
+  onToggle: () => void;
+  updatedAt: number;
+  fetching: boolean;
+}) {
+  return (
+    <div className="ml-auto flex items-center gap-2 text-[11px]">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={live}
+        className={`flex items-center gap-1.5 rounded border px-1.5 py-0.5 font-medium ${
+          live
+            ? "border-emerald-700 text-emerald-700"
+            : "border-slate-300 text-slate-500 hover:border-slate-900"
+        }`}
+      >
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${
+            live
+              ? fetching
+                ? "bg-emerald-700"
+                : "bg-emerald-400"
+              : "bg-slate-400"
+          }`}
+          role="presentation"
+        />
+        {live ? "live" : "paused"}
+      </button>
+      <span className="text-slate-400">
+        {updatedAt ? `read ${new Date(updatedAt).toLocaleTimeString()}` : "…"}
+      </span>
+    </div>
+  );
+}
+
 export default function ViewerPage() {
-  const sessions = useLogSessions();
-  const stats = useLogStats();
+  // Live by default: the page exists to be watched while someone else uses the app.
+  const [live, setLive] = useState(true);
+  const sessions = useLogSessions(live);
+  const stats = useLogStats(live);
   const [open, setOpen] = useState<string | null>(null);
   const [visitor, setVisitor] = useState<string | null>(null);
-  const detail = useLogSession(open);
+  const detail = useLogSession(open, live);
   const s = stats.data;
 
   // Every visitor that has a session, newest first — the order the list is already in,
@@ -266,9 +320,15 @@ export default function ViewerPage() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
           <PaceLogo className="text-slate-900" />
           <span className="text-[13px] text-slate-500">ratings log</span>
-          <span className="ml-auto rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-600">
+          <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-600">
             not the app
           </span>
+          <LiveBadge
+            live={live}
+            onToggle={() => setLive((v) => !v)}
+            updatedAt={stats.dataUpdatedAt}
+            fetching={stats.isFetching}
+          />
         </div>
       </header>
 
@@ -278,7 +338,8 @@ export default function ViewerPage() {
             Every turn, every tool call and every rating, from every browser
             that has used the link, kept in Postgres so it survives a restart or
             a redeploy. Read-only — a log you can tidy up afterwards is worth
-            nothing.
+            nothing. It re-reads every few seconds, so you can leave this open
+            beside the app and watch ratings arrive.
           </p>
         </div>
 

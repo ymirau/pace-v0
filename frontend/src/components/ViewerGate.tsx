@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { ApiError } from "../api/client";
-import { useLogStats } from "../api/log";
+import { useViewerProbe } from "../api/log";
 import { setViewerCode } from "../viewerCode";
 
 /**
@@ -14,7 +14,8 @@ import { setViewerCode } from "../viewerCode";
  *
  * Same shape as `AccessGate`: probe the endpoint, and treat a 401 as "the code is
  * missing or wrong". With `PACE_VIEWER_CODE` empty (local dev) the probe succeeds and
- * nobody sees a prompt.
+ * nobody sees a prompt. The probe has its own query key so this prompt never inherits
+ * the page's three-second polling.
  *
  * This is still not authentication — one shared secret, no identity. It keeps the log
  * off the open internet; it would not survive someone determined.
@@ -24,7 +25,7 @@ export default function ViewerGate({
 }: {
   children: React.ReactNode;
 }) {
-  const probe = useLogStats();
+  const probe = useViewerProbe();
   const [code, setCode] = useState("");
 
   const needsCode = probe.isError && (probe.error as ApiError)?.status === 401;

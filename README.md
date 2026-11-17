@@ -63,8 +63,12 @@ it. All computed from the log rather than by hand. Read-only — a log you can t
 afterwards is worth nothing.
 
 It is deliberately not reachable from the app. Reviewers share one access code, and the
-log holds all of their transcripts; showing someone the instrument also changes what
-they rate.
+unscoped log holds all of their transcripts; showing someone the instrument also changes
+what they rate.
+
+The app does have a **`/log`** page, and it shows **only the caller's own** sessions — so
+someone reviewing Pace can see what they themselves said and rated. That is why it is
+safe behind the shared code. Same screen, same component, one scope narrower.
 
 ## What changed from the template
 
@@ -167,6 +171,7 @@ a cleanup score and a feel; the UI's button needs only the feel.
 | `GET /api/log/sessions` | Every session, newest first, with turn and rating counts. |
 | `GET /api/log/sessions/{id}` | One session's full transcript. |
 | `GET /api/log/stats` | The close-out numbers, with per-version and per-browser breakdowns. |
+| `GET /api/my-log/*` | The same three reads, scoped to the caller's own sessions. |
 | `GET /api/chat/ping` | Is the access code right? Nothing else — the SPA's gate probes it. |
 | `GET /api/me` | The caller's email and name. |
 | `GET /health` | Liveness, unauthenticated and ungated, at the root. |
@@ -176,8 +181,13 @@ interchangeable**:
 
 | Routes | Header | Variable | What it is for |
 |---|---|---|---|
-| `/api/chat/*` | `X-Pace-Access-Code` | `PACE_ACCESS_CODE` | So a review link can't run up the Anthropic bill. Shared with every reviewer. |
+| `/api/chat/*`, `/api/my-log/*` | `X-Pace-Access-Code` | `PACE_ACCESS_CODE` | So a review link can't run up the Anthropic bill. Shared with every reviewer. |
 | `/api/log/*` | `X-Pace-Viewer-Code` | `PACE_VIEWER_CODE` | So the code you hand out doesn't also read every other reviewer's transcript. Yours. |
+
+`/api/my-log` sits behind the shared code because it is **scoped**: it reads the caller's
+visitor header, there is no `?visitor=` to tamper with, and a session id belonging to
+someone else answers 404 rather than 403 — "not yours" and "doesn't exist" must look the
+same from outside.
 
 Neither is **authentication** — one secret each, no identity, no audit. **Both gates are
 open while their variable is empty**, which is right locally and means a deployed env

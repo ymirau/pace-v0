@@ -65,11 +65,14 @@ const ICONS: Record<string, ReactNode> = {
 };
 
 // Pace is one screen. The nav rail stays for the header/settings chrome.
-// The app is one screen. The ratings log used to be a second entry here and now lives
-// at /viewer, outside the app and behind its own code: reviewers share one access code,
-// and the log holds all of their transcripts. Showing them the instrument also changes
-// what they rate. See pages/ViewerPage.tsx.
-const NAV: NavEntry[] = [{ to: "/", label: "Pace", icon: "home", end: true }];
+// `/log` is each visitor's OWN log, which is why it can live in the app's nav behind the
+// shared reviewer code. The view across every visitor is /viewer — not listed here, and
+// behind a separate code, because reviewers share one access code and that log holds all
+// of their transcripts. See pages/LogPage.tsx and pages/ViewerPage.tsx.
+const NAV: NavEntry[] = [
+  { to: "/", label: "Pace", icon: "home", end: true },
+  { to: "/log", label: "Your log", icon: "samples", end: false },
+];
 
 export default function Layout() {
   const { instance, accounts } = useMsal();

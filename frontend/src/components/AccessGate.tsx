@@ -1,21 +1,25 @@
 import { useState } from "react";
 
-import { useLogStats } from "../api/log";
+import { useAccessProbe } from "../api/log";
 import { ApiError } from "../api/client";
 import { setAccessCode } from "../accessCode";
 
 /**
  * The deployed app's shared-code gate.
  *
- * Probes one gated endpoint. Locally `PACE_ACCESS_CODE` is empty, the backend lets
+ * Probes `/api/chat/ping`, which exists for exactly this. Locally `PACE_ACCESS_CODE` is empty, the backend lets
  * everything through, and this renders its children immediately — nobody sees a prompt.
  * Deployed, a 401 means the code is missing or wrong, and the reviewer types it once.
  *
  * This is not authentication and shouldn't be mistaken for it: one secret, shared, with
  * no identity behind it. It is here so a review link can't run up the Anthropic bill.
  */
-export default function AccessGate({ children }: { children: React.ReactNode }) {
-  const probe = useLogStats();
+export default function AccessGate({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const probe = useAccessProbe();
   const [code, setCode] = useState("");
 
   const needsCode = probe.isError && (probe.error as ApiError)?.status === 401;

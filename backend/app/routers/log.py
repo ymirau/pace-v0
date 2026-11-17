@@ -6,6 +6,11 @@ machine and survives a redeploy, unlike the JSONL files on local disk.
 
 Read-only by design: nothing here edits or deletes a log line. An append-only record is
 only worth something if it cannot be tidied up after the fact.
+
+**It reads across every visitor.** Business state is partitioned per browser
+(`app/core/visitor.py`) so reviewers don't rewrite each other's world, but the evidence
+is not: sessions carry a `visitor` so you can tell two reviewers apart, and the stats
+aggregate the lot. Served to the standalone viewer at `/viewer`, behind its own code.
 """
 
 from typing import Annotated
@@ -14,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.gate import require_access_code
+from app.core.gate import require_viewer_code
 from app.core.security import get_current_user
 from app.schemas.log import Event, SessionDetail, SessionSummary, Stats
 from app.sources.postgres.models.chat import ChatEvent, ChatRating, ChatSession
@@ -24,7 +29,9 @@ from app.sources.postgres.session import get_session
 router = APIRouter(
     prefix="/log",
     tags=["log"],
-    dependencies=[Depends(get_current_user), Depends(require_access_code)],
+    # The VIEWER code, not the reviewer's. The log is universal across visitors now,
+    # so the code that buys a conversation must not also read everyone else's.
+    dependencies=[Depends(get_current_user), Depends(require_viewer_code)],
 )
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -82,6 +89,7 @@ async def _summaries(db: AsyncSession, ids: list[str] | None = None) -> list[Ses
                 model=s.model,
                 prompt_version=s.prompt_version,
                 seed=s.seed,
+                visitor=s.visitor,
                 sim_today=s.sim_today.isoformat() if s.sim_today else None,
                 business=(s.founder or {}).get("business") or None,
                 turns=counts.get((s.id, "assistant"), 0),
@@ -139,6 +147,7 @@ async def read_stats(db: SessionDep) -> Stats:
     ratings = (await db.execute(select(ChatRating))).scalars().all()
 
     version_by_session = {s.id: s.prompt_version for s in sessions}
+    visitor_by_session = {s.id: s.visitor for s in sessions}
     assistant = [e for e in events if e.type == "assistant"]
     # A rating is a feel; the cleanup score is optional and often added later, so the
     # two are counted separately. Averaging over "every rating" would silently treat
@@ -177,9 +186,10 @@ async def read_stats(db: SessionDep) -> Stats:
     proposals.setdefault("rejected", rejected)
     proposals.setdefault("unresolved", max(made - applied - rejected, 0))
 
-    def empty_version() -> dict:
+    def _empty_group() -> dict:
         return {
             "turns": 0,
+            "sessions": 0,
             "rated": 0,
             "magic": 0,
             "annoying": 0,
@@ -188,23 +198,35 @@ async def read_stats(db: SessionDep) -> Stats:
             "_n": 0,
         }
 
-    by_version: dict[str, dict] = {}
-    for e in assistant:
-        v = version_by_session.get(e.session_id, "?")
-        by_version.setdefault(v, empty_version())["turns"] += 1
-    for r in ratings:
-        v = version_by_session.get(r.session_id, "?")
-        slot = by_version.setdefault(v, empty_version())
-        slot["rated"] += 1
-        if r.feel in ("magic", "annoying"):
-            slot[r.feel] += 1
-        if r.score is not None:
-            slot["_sum"] += r.score
-            slot["_n"] += 1
-    for slot in by_version.values():
-        slot["avg_score"] = round(slot["_sum"] / slot["_n"], 2) if slot["_n"] else None
-        slot.pop("_sum")
-        slot.pop("_n")
+    def _grouped(label_of: dict[str, str]) -> dict[str, dict]:
+        """Turns and verdicts bucketed by whatever `label_of` maps a session to.
+
+        Prompt version and visitor are the same arithmetic over a different key, and the
+        cleanup average has one trap worth keeping in one place: `avg_score` is over
+        ratings that actually carry a score, never over every rating, or a feel-only
+        verdict would be averaged in as a zero and flatter the result.
+        """
+        out: dict[str, dict] = {}
+        for sid in label_of:
+            out.setdefault(label_of[sid], _empty_group())["sessions"] += 1
+        for e in assistant:
+            out.setdefault(label_of.get(e.session_id, "?"), _empty_group())["turns"] += 1
+        for r in ratings:
+            slot = out.setdefault(label_of.get(r.session_id, "?"), _empty_group())
+            slot["rated"] += 1
+            if r.feel in ("magic", "annoying"):
+                slot[r.feel] += 1
+            if r.score is not None:
+                slot["_sum"] += r.score
+                slot["_n"] += 1
+        for slot in out.values():
+            slot["avg_score"] = round(slot["_sum"] / slot["_n"], 2) if slot["_n"] else None
+            slot.pop("_sum")
+            slot.pop("_n")
+        return out
+
+    by_version = _grouped(version_by_session)
+    by_visitor = _grouped(visitor_by_session)
 
     return Stats(
         sessions=len(sessions),
@@ -221,4 +243,5 @@ async def read_stats(db: SessionDep) -> Stats:
         feels=feels,
         proposals=proposals,
         by_prompt_version=by_version,
+        by_visitor=by_visitor,
     )

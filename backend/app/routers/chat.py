@@ -10,9 +10,14 @@ runs, and writes it back. An in-process cache is kept only to skip that round tr
 the same worker happens to serve the next request.
 
 Business state (projects, tasks, proposals) lives in Postgres too, as one JSONB
-document (`app/services/state_store.py`). The engine still mutates a plain dict in place
-exactly as it does on a laptop; this layer just loads it before the turn and writes it
-back after. Last write wins — honest for one founder, not a multi-user design.
+document **per visitor** (`app/services/state_store.py`). The engine still mutates a
+plain dict in place exactly as it does on a laptop; this layer just loads it before the
+turn and writes it back after.
+
+Every route is scoped to the caller's visitor id (`app/core/visitor.py`), so two people
+on the review link get their own world and their own conversation instead of sharing
+one. Within a visitor it is still last-write-wins: two tabs of the same browser can
+clobber each other.
 
 **A turn takes seconds, and the engine is blocking.** The opening check-in is two API
 calls and about 7s of generation; `/stream` sends what the agent is doing as it happens
@@ -36,6 +41,7 @@ from starlette.concurrency import iterate_in_threadpool
 from app.core.config import Settings, get_settings
 from app.core.gate import require_access_code
 from app.core.security import get_current_user
+from app.core.visitor import Visitor
 from app.pace import store
 from app.pace.agent import Agent, opening, session_meta
 from app.pace.logger import Logger
@@ -64,7 +70,15 @@ router = APIRouter(
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
+# Live agents, keyed by visitor. Only a shortcut: every turn can be rebuilt from
+# Postgres, so losing this costs a round trip and nothing else. It used to be keyed by
+# session id and cleared on every miss, which with more than one visitor meant each
+# request evicted the other person's agent.
 _CACHE: dict[str, Agent] = {}
+
+#: Keep the cache from growing without bound on a long-lived worker. Dropping the lot is
+#: fine (see above) and simpler than tracking what was used least recently.
+_CACHE_MAX = 32
 
 
 def _require_key(settings: Settings) -> str:
@@ -92,17 +106,22 @@ def _resumed_turn_count(stored: list[dict]) -> int:
     return sum(1 for m in stored if m.get("role") == "user" and isinstance(m.get("content"), str))
 
 
-async def _agent(db: AsyncSession, settings: Settings, *, resume: bool = True) -> Agent:
-    """The live conversation. Resumed from Postgres when this worker has never seen it."""
+async def _agent(
+    db: AsyncSession, settings: Settings, visitor: str, *, resume: bool = True
+) -> Agent:
+    """This visitor's live conversation, resumed from Postgres on a cold worker."""
     key = _require_key(settings)
-    state = await state_store.load(db, settings.pace_seed)
+    state = await state_store.load(db, visitor, settings.pace_seed)
     seed = state.get("seed", "example")
 
-    sid = await chat_log.latest_session_id(db, seed) if resume else None
-    if sid and sid in _CACHE:
-        agent = _CACHE[sid]
-        agent.state = state
-        return agent
+    sid = await chat_log.latest_session_id(db, seed, visitor) if resume else None
+    cached = _CACHE.get(visitor)
+    # Only reuse it for the session we actually mean to resume. A /reset writes a new
+    # session row, and serving the cached agent then would carry the old conversation
+    # (and its turn numbers) into it.
+    if sid and cached is not None and cached.log.session == sid:
+        cached.state = state
+        return cached
 
     model, prompt_version = session_meta()
     log = Logger(model, prompt_version, state["clock"]["today"], seed)
@@ -116,6 +135,7 @@ async def _agent(db: AsyncSession, settings: Settings, *, resume: bool = True) -
         model=model,
         prompt_version=prompt_version,
         seed=seed,
+        visitor=visitor,
         sim_today=state["clock"]["today"],
         founder=state["founder"],
     )
@@ -124,13 +144,14 @@ async def _agent(db: AsyncSession, settings: Settings, *, resume: bool = True) -
         if stored:
             agent.messages = stored
             agent.turn = _resumed_turn_count(stored)
-    _CACHE.clear()
-    _CACHE[log.session] = agent
+    if len(_CACHE) >= _CACHE_MAX:
+        _CACHE.clear()
+    _CACHE[visitor] = agent
     return agent
 
 
 async def _reply(
-    db: AsyncSession, agent: Agent, text: str, *, hidden: bool, proactive: bool
+    db: AsyncSession, agent: Agent, visitor: str, text: str, *, hidden: bool, proactive: bool
 ) -> Reply:
     # agent.send blocks for seconds on the Anthropic API. On one uvicorn worker that
     # would stall every other request, /state and /log included, until the turn landed.
@@ -139,7 +160,7 @@ async def _reply(
     )
     # The business state is NOT best-effort: losing it means losing the user's work, so
     # a failure here should surface rather than be swallowed.
-    await state_store.save(db, agent.state)
+    await state_store.save(db, visitor, agent.state)
     # The log is best-effort — a chat that 500s because logging was down is worse than
     # a lost line.
     try:
@@ -183,29 +204,33 @@ def _resumed(agent: Agent) -> Reply | None:
     )
 
 
-async def _check_in(db: AsyncSession, agent: Agent) -> str:
+async def _check_in(db: AsyncSession, agent: Agent, visitor: str) -> str:
     """The hidden opening message, and the clock catch-up that goes with it."""
     gap = store.sync_clock(agent.state)
     if gap:
-        await state_store.save(db, agent.state)
+        await state_store.save(db, visitor, agent.state)
         agent.log.clock("elapsed", gap, "", agent.state["clock"]["today"])
     return opening(agent.state, gap)
 
 
 @router.post("/open", response_model=Reply)
-async def open_session(db: SessionDep, settings: SettingsDep) -> Reply:
+async def open_session(db: SessionDep, settings: SettingsDep, visitor: Visitor) -> Reply:
     """The proactive check-in: the agent speaks before the founder types anything."""
-    agent = await _agent(db, settings)
+    agent = await _agent(db, settings, visitor)
     resumed = _resumed(agent)
     if resumed:
         return resumed
-    return await _reply(db, agent, await _check_in(db, agent), hidden=True, proactive=True)
+    return await _reply(
+        db, agent, visitor, await _check_in(db, agent, visitor), hidden=True, proactive=True
+    )
 
 
 @router.post("/message", response_model=Reply)
-async def send_message(payload: MessageSend, db: SessionDep, settings: SettingsDep) -> Reply:
-    agent = await _agent(db, settings)
-    return await _reply(db, agent, payload.text, hidden=False, proactive=False)
+async def send_message(
+    payload: MessageSend, db: SessionDep, settings: SettingsDep, visitor: Visitor
+) -> Reply:
+    agent = await _agent(db, settings, visitor)
+    return await _reply(db, agent, visitor, payload.text, hidden=False, proactive=False)
 
 
 def _sse(event: str, data: object) -> str:
@@ -213,7 +238,9 @@ def _sse(event: str, data: object) -> str:
 
 
 @router.post("/stream")
-async def stream_turn(payload: StreamSend, settings: SettingsDep) -> StreamingResponse:
+async def stream_turn(
+    payload: StreamSend, settings: SettingsDep, visitor: Visitor
+) -> StreamingResponse:
     """The same turn as ``/open`` and ``/message``, sent as it happens.
 
     Events: ``tool`` each time the agent reaches for something, ``text`` as it writes,
@@ -236,14 +263,14 @@ async def stream_turn(payload: StreamSend, settings: SettingsDep) -> StreamingRe
 
     async def events() -> AsyncIterator[str]:
         async with session_scope() as db:
-            agent = await _agent(db, settings)
+            agent = await _agent(db, settings, visitor)
             proactive = payload.text is None
             if proactive:
                 resumed = _resumed(agent)
                 if resumed:
                     yield _sse("done", resumed.model_dump())
                     return
-                text = await _check_in(db, agent)
+                text = await _check_in(db, agent, visitor)
             else:
                 text = payload.text or ""
 
@@ -265,7 +292,7 @@ async def stream_turn(payload: StreamSend, settings: SettingsDep) -> StreamingRe
                 return
 
             # Same order as /message: state is not best-effort, the log is.
-            await state_store.save(db, agent.state)
+            await state_store.save(db, visitor, agent.state)
             try:
                 await chat_log.add_events(db, agent.log.session, agent.log.drain())
                 await chat_log.save_messages(db, agent.log.session, agent.messages)
@@ -321,13 +348,17 @@ async def rate_turn(payload: RatingSend, db: SessionDep) -> None:
 
 
 @router.post("/reset", response_model=StateRead)
-async def reset(payload: ResetRequest, db: SessionDep) -> StateRead:
-    """Reload a seed and start a new conversation. The old session's log is kept."""
+async def reset(payload: ResetRequest, db: SessionDep, visitor: Visitor) -> StateRead:
+    """Reload a seed and start a new conversation, for this visitor only.
+
+    The old session's log is kept — resetting your own world must not delete evidence,
+    and it has never been able to touch anyone else's.
+    """
     try:
-        state = await state_store.reset(db, payload.seed)
+        state = await state_store.reset(db, visitor, payload.seed)
     except FileNotFoundError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
-    _CACHE.clear()
+    _CACHE.pop(visitor, None)
     # A fresh session row, so the next /open greets instead of resuming.
     model, prompt_version = session_meta()
     await chat_log.ensure_session(
@@ -336,6 +367,7 @@ async def reset(payload: ResetRequest, db: SessionDep) -> StateRead:
         model=model,
         prompt_version=prompt_version,
         seed=state.get("seed", "example"),
+        visitor=visitor,
         sim_today=state["clock"]["today"],
         founder=state["founder"],
     )
@@ -343,11 +375,25 @@ async def reset(payload: ResetRequest, db: SessionDep) -> StateRead:
 
 
 @router.get("/state", response_model=StateRead)
-async def read_state(db: SessionDep, settings: SettingsDep) -> StateRead:
-    state = await state_store.load(db, settings.pace_seed)
+async def read_state(db: SessionDep, settings: SettingsDep, visitor: Visitor) -> StateRead:
+    state = await state_store.load(db, visitor, settings.pace_seed)
     if store.sync_clock(state):
-        await state_store.save(db, state)  # a real-time seed's clock moved
+        await state_store.save(db, visitor, state)  # a real-time seed's clock moved
     return _state_read(state)
+
+
+@router.get("/ping")
+async def ping() -> dict[str, bool]:
+    """Is the reviewer's access code right? Nothing else.
+
+    `AccessGate` in the SPA needs one cheap gated endpoint to probe, and it used to probe
+    `/log/stats`. That stopped being the same question when the log moved behind its own
+    viewer code: a reviewer with a perfectly good access code would have been told their
+    code was wrong. This route carries the router's own dependencies and no body worth
+    reading, so it answers exactly the question asked and costs no model call, no state
+    read and no write.
+    """
+    return {"ok": True}
 
 
 def _state_read(state: dict) -> StateRead:

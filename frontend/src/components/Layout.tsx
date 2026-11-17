@@ -65,10 +65,11 @@ const ICONS: Record<string, ReactNode> = {
 };
 
 // Pace is one screen. The nav rail stays for the header/settings chrome.
-const NAV: NavEntry[] = [
-  { to: "/", label: "Pace", icon: "home", end: true },
-  { to: "/log", label: "Log", icon: "samples", end: false },
-];
+// The app is one screen. The ratings log used to be a second entry here and now lives
+// at /viewer, outside the app and behind its own code: reviewers share one access code,
+// and the log holds all of their transcripts. Showing them the instrument also changes
+// what they rate. See pages/ViewerPage.tsx.
+const NAV: NavEntry[] = [{ to: "/", label: "Pace", icon: "home", end: true }];
 
 export default function Layout() {
   const { instance, accounts } = useMsal();
@@ -145,7 +146,9 @@ export default function Layout() {
         </nav>
         <div className="flex items-center gap-2 px-4 pt-4 text-[11px] text-slate-500">
           {AUTH_BYPASS ? (
-            <div className="min-w-0 italic">{AUTH_BYPASS_REASON} — auth bypassed</div>
+            <div className="min-w-0 italic">
+              {AUTH_BYPASS_REASON} — auth bypassed
+            </div>
           ) : (
             <div className="min-w-0 truncate" title={account?.username}>
               {account?.name ?? account?.username ?? "Signed in"}
@@ -153,7 +156,10 @@ export default function Layout() {
           )}
           <div className="ml-auto">
             {/* Collapse, theme toggle, Sign out and the build stamp live in the ⋮ menu. */}
-            <SettingsMenu onSignOut={onSignOut} onCollapse={() => setCollapsed(true)} />
+            <SettingsMenu
+              onSignOut={onSignOut}
+              onCollapse={() => setCollapsed(true)}
+            />
           </div>
         </div>
       </aside>

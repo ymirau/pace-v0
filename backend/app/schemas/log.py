@@ -12,6 +12,8 @@ class SessionSummary(BaseModel):
     model: str
     prompt_version: str
     seed: str
+    visitor: str
+    """Which browser produced it. Not a person — see app/core/visitor.py."""
     sim_today: str | None
     business: str | None
     turns: int
@@ -52,3 +54,6 @@ class Stats(BaseModel):
     feels: dict[str, int]
     proposals: dict[str, int]
     by_prompt_version: dict[str, dict]
+    by_visitor: dict[str, dict]
+    """Per-browser totals, so one enthusiastic reviewer is visible as one reviewer
+    rather than silently dominating the headline numbers."""

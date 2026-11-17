@@ -46,8 +46,10 @@ human-facing overview; this file is the operational guide for extending the code
    secret; `solo` is reserved for a caller that sends none and maps to the pre-visitor
    `'current'` row.
 7. **Two codes, and they are not interchangeable.** `PACE_ACCESS_CODE` gates `/api/chat`
-   (a bill guard, shared with every reviewer). `PACE_VIEWER_CODE` gates `/api/log` and
-   the `/viewer` page. They are separate because the log now holds every reviewer's
+   and `/api/my-log` (a bill guard, shared with every reviewer; `my-log` is safe there
+   because it only ever returns the caller's own sessions — scope comes from the request's
+   visitor header, never a parameter, and a session id that isn't yours answers 404).
+   `PACE_VIEWER_CODE` gates the unscoped `/api/log` and the `/viewer` page. They are separate because the log now holds every reviewer's
    transcript and the notes written about the agent's replies, so the code handed out
    with the link must not read it. **Both gates are open when their variable is empty**,
    which is right locally and means a deployed env that sets one and not the other has

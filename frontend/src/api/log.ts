@@ -73,24 +73,95 @@ export interface Group {
   avg_score: number | null;
 }
 
-export function useLogSessions() {
+/**
+ * How often the viewer re-reads the log while you watch it.
+ *
+ * The viewer is a **different tab** from the app — often a different browser or device —
+ * so nothing in the app can tell it a rating happened. Invalidating the cache after
+ * `useRateTurn` only reaches the tab that did the rating; a second tab has no idea. That
+ * is why the viewer looked frozen while the ratings were in fact landing correctly.
+ *
+ * Polling rather than streaming, deliberately: an SSE feed would mean the server holding
+ * a connection open, Vercel caps a function at 60s, and the reconnection logic buys
+ * nothing a person can perceive over a three-second poll on a page they are reading.
+ */
+const VISIBLE_MS = 3_000;
+
+/**
+ * Still polling when hidden, just slowly — so coming back to the tab shows something
+ * current rather than something from an hour ago, without paying for a 3s poll all day.
+ */
+const HIDDEN_MS = 30_000;
+
+/**
+ * The poll interval, chosen per tick from whether the tab can actually be seen.
+ *
+ * **Visibility, not focus.** A viewer on a second monitor is `visible` but not focused,
+ * and that is the exact case this exists for: watching ratings land while you type in
+ * the other window. `refetchOnWindowFocus` does nothing there, and keying off focus
+ * would drop to the slow rate precisely when you are looking at it.
+ *
+ * Exported for the test: it is the one piece of this with a decision in it, and it is
+ * pure.
+ */
+export function pollInterval(): number {
+  // Guarded so it stays callable from a node-environment test with no jsdom.
+  if (typeof document === "undefined") return VISIBLE_MS;
+  return document.visibilityState === "visible" ? VISIBLE_MS : HIDDEN_MS;
+}
+
+/**
+ * The polling options every live log query shares.
+ *
+ * `refetchIntervalInBackground` is the load-bearing one. Without it TanStack pauses the
+ * timer whenever the document is hidden, so a viewer sitting behind the app's tab would
+ * stop updating and only catch up when clicked — the same symptom this fixes, reached by
+ * a different route.
+ */
+function live(enabled: boolean) {
+  return {
+    refetchInterval: enabled ? pollInterval : (false as const),
+    refetchIntervalInBackground: true,
+  };
+}
+
+export function useLogSessions(enabled = true) {
   return useQuery({
     queryKey: ["log", "sessions"],
     queryFn: () => apiFetch<SessionSummary[]>("/log/sessions"),
+    ...live(enabled),
   });
 }
 
-export function useLogSession(id: string | null) {
+export function useLogSession(id: string | null, enabled = true) {
   return useQuery({
     queryKey: ["log", "session", id],
     queryFn: () => apiFetch<SessionDetail>(`/log/sessions/${id}`),
     enabled: !!id,
+    // An expanded transcript has to grow too: a rating pressed now belongs to the
+    // session being read, and a stale panel would contradict the list above it.
+    ...live(enabled && !!id),
   });
 }
 
-export function useLogStats() {
+export function useLogStats(enabled = true) {
   return useQuery({
     queryKey: ["log", "stats"],
+    queryFn: () => apiFetch<Stats>("/log/stats"),
+    ...live(enabled),
+  });
+}
+
+/**
+ * Is the viewer code accepted? Used by `ViewerGate` and nothing else.
+ *
+ * Its own query key, so the gate's one-shot probe never shares an observer with the
+ * page's polling queries — a login prompt that re-asked the server every three seconds
+ * would be a silly way to spend function invocations.
+ */
+export function useViewerProbe() {
+  return useQuery({
+    queryKey: ["log", "probe"],
     queryFn: () => apiFetch<Stats>("/log/stats"),
   });
 }

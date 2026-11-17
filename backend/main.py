@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import chat, health, log, me
+from app.routers import chat, health, log, me, my_log
 from app.sources.postgres.session import dispose_engine, init_engine
 
 
@@ -39,3 +39,4 @@ app.include_router(health.router)
 app.include_router(me.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(log.router, prefix="/api")
+app.include_router(my_log.router, prefix="/api")

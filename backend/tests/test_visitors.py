@@ -181,3 +181,60 @@ async def test_the_viewer_code_does_not_open_the_chat(gated_client: AsyncClient)
         "/api/chat/state", headers={"X-Pace-Viewer-Code": "viewer-code"}
     )
     assert response.status_code == 401
+
+
+async def test_my_log_shows_only_my_own_sessions(client: AsyncClient) -> None:
+    """The in-app Log page is scoped, so it is safe behind the shared reviewer code."""
+    await client.post("/api/chat/reset", json={"seed": "startup"}, headers=ALICE)
+    await client.post("/api/chat/reset", json={"seed": "startup"}, headers=BOB)
+
+    mine = (await client.get("/api/my-log/sessions", headers=ALICE)).json()
+    assert mine, "Alice should see her own session"
+    assert {s["visitor"] for s in mine} == {"alice0001"}, "another visitor's session leaked"
+
+    # And the unscoped view still sees both, which is what /viewer is for.
+    everyone = (await client.get("/api/log/sessions")).json()
+    assert {"alice0001", "bob00002"} <= {s["visitor"] for s in everyone}
+
+
+async def test_my_log_refuses_someone_elses_session_by_id(client: AsyncClient) -> None:
+    """The scoping has to hold on the detail route too, or it is decoration.
+
+    Session ids are 8 hex characters and appear in the viewer, so "only lists mine" is no
+    protection on its own: the transcript route is the one that would hand over the text.
+    It answers 404 rather than 403, so "not yours" and "doesn't exist" look the same.
+    """
+    await client.post("/api/chat/reset", json={"seed": "startup"}, headers=BOB)
+    bobs = (await client.get("/api/my-log/sessions", headers=BOB)).json()
+    bob_id = bobs[0]["id"]
+
+    # Bob can read his own.
+    assert (await client.get(f"/api/my-log/sessions/{bob_id}", headers=BOB)).status_code == 200
+    # Alice, holding the same reviewer code and the id, cannot.
+    assert (await client.get(f"/api/my-log/sessions/{bob_id}", headers=ALICE)).status_code == 404
+    # The viewer, holding the viewer code, can — that is the whole point of the viewer.
+    assert (await client.get(f"/api/log/sessions/{bob_id}")).status_code == 200
+
+
+async def test_my_log_stats_count_only_my_turns(client: AsyncClient) -> None:
+    """A reviewer's own numbers must not include anyone else's sessions."""
+    await client.post("/api/chat/reset", json={"seed": "startup"}, headers=ALICE)
+    await client.post("/api/chat/reset", json={"seed": "startup"}, headers=BOB)
+
+    mine = (await client.get("/api/my-log/stats", headers=ALICE)).json()
+    everyone = (await client.get("/api/log/stats")).json()
+    assert mine["sessions"] == 1
+    assert everyone["sessions"] > mine["sessions"]
+    assert set(mine["by_visitor"]) == {"alice0001"}
+
+
+async def test_my_log_takes_the_reviewer_code_not_the_viewer_code(
+    gated_client: AsyncClient,
+) -> None:
+    """Opposite gate from /api/log, because it is reviewer-facing and already scoped."""
+    assert (
+        await gated_client.get("/api/my-log/stats", headers={"X-Pace-Access-Code": "reviewer-code"})
+    ).status_code == 200
+    assert (
+        await gated_client.get("/api/my-log/stats", headers={"X-Pace-Viewer-Code": "viewer-code"})
+    ).status_code == 401

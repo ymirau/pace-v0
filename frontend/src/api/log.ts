@@ -125,18 +125,38 @@ function live(enabled: boolean) {
   };
 }
 
-export function useLogSessions(enabled = true) {
+/**
+ * Which log is being read.
+ *
+ * `"all"` is every visitor's, served to the standalone viewer behind the viewer code.
+ * `"mine"` is just this browser's, served to the Log page inside the app behind the
+ * ordinary reviewer code — so someone can see what they themselves rated without being
+ * handed everyone else's transcripts.
+ *
+ * The scope picks the endpoint, and the endpoint enforces it. There is no `?visitor=`
+ * parameter to tamper with: `/my-log` reads the scope from the request's own visitor
+ * header (`backend/app/routers/my_log.py`).
+ */
+export type LogScope = "all" | "mine";
+
+const BASE: Record<LogScope, string> = { all: "/log", mine: "/my-log" };
+
+export function useLogSessions(scope: LogScope, enabled = true) {
   return useQuery({
-    queryKey: ["log", "sessions"],
-    queryFn: () => apiFetch<SessionSummary[]>("/log/sessions"),
+    queryKey: ["log", scope, "sessions"],
+    queryFn: () => apiFetch<SessionSummary[]>(`${BASE[scope]}/sessions`),
     ...live(enabled),
   });
 }
 
-export function useLogSession(id: string | null, enabled = true) {
+export function useLogSession(
+  scope: LogScope,
+  id: string | null,
+  enabled = true,
+) {
   return useQuery({
-    queryKey: ["log", "session", id],
-    queryFn: () => apiFetch<SessionDetail>(`/log/sessions/${id}`),
+    queryKey: ["log", scope, "session", id],
+    queryFn: () => apiFetch<SessionDetail>(`${BASE[scope]}/sessions/${id}`),
     enabled: !!id,
     // An expanded transcript has to grow too: a rating pressed now belongs to the
     // session being read, and a stale panel would contradict the list above it.
@@ -144,10 +164,10 @@ export function useLogSession(id: string | null, enabled = true) {
   });
 }
 
-export function useLogStats(enabled = true) {
+export function useLogStats(scope: LogScope, enabled = true) {
   return useQuery({
-    queryKey: ["log", "stats"],
-    queryFn: () => apiFetch<Stats>("/log/stats"),
+    queryKey: ["log", scope, "stats"],
+    queryFn: () => apiFetch<Stats>(`${BASE[scope]}/stats`),
     ...live(enabled),
   });
 }

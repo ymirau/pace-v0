@@ -5,6 +5,7 @@ import AuthGate from "./components/AuthGate";
 import Layout from "./components/Layout";
 import ViewerGate from "./components/ViewerGate";
 import ChatPage from "./pages/ChatPage";
+import LogPage from "./pages/LogPage";
 import ViewerPage from "./pages/ViewerPage";
 
 export const router = createBrowserRouter(
@@ -18,9 +19,13 @@ export const router = createBrowserRouter(
           </AccessGate>
         </AuthGate>
       ),
-      // The app is one screen: the conversation. The evidence it produces is read from
-      // /viewer, which is deliberately not in here.
-      children: [{ index: true, element: <ChatPage /> }],
+      // Two screens: the conversation, and your own log of it. `/log` is scoped to the
+      // caller's own sessions (see pages/LogPage.tsx); the view across every visitor is
+      // /viewer below, behind a different code.
+      children: [
+        { index: true, element: <ChatPage /> },
+        { path: "log", element: <LogPage /> },
+      ],
     },
     {
       // The ratings log, outside the app on purpose: its own URL, its own code, and
